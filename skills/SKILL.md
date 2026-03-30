@@ -28,13 +28,43 @@ cat .claude/rules/octopus-observability.md 2>/dev/null || cat .cursor/rules/octo
 ```
 
 - **Has content with actual service names**: use those service names in queries
-- **Has template placeholders (<!-- AGENT: -->)**: analyze the codebase and fill it in now:
-  1. Search for Octopus SDK imports: `@octopus-sdk/*`, `opentelemetry-kanyun-*`, octopus javaagent
-  2. Find service names from: package.json, docker-compose, k8s manifests, env vars, Spring configs
-  3. Identify data collection: log/trace/metric/RUM/LLM SDKs
-  4. Map dependencies: HTTP clients → downstream, API routes → upstream, DB/MQ connections
-  5. Write the results into the file, replacing all `<!-- AGENT: -->` sections
-- **NO_CONTEXT**: run `npx octo-cli init` first, then fill it in as above
+- **Has template placeholders (<!-- AGENT: -->)**: bootstrap it now (see Bootstrap workflow below)
+- **NO_CONTEXT**: run `npx octo-cli init` first, then bootstrap
+
+### Bootstrap Workflow (filling in observability context)
+
+When the context file has placeholders, follow this sequence:
+
+```bash
+# 1. Identify project type and find service names from code
+#    Scan: package.json, pom.xml, docker-compose, k8s manifests,
+#    application.yml (spring.application.name), env vars,
+#    @octopus-sdk/browser-rum init (applicationName)
+
+# 2. Verify services exist in Octopus
+npx octo-cli services list -e online -l 1d
+npx octo-cli services list -e test -l 1d
+
+# 3. For each confirmed service, query the LIVE topology — this is the
+#    most reliable way to discover dependencies (what actually runs in prod)
+npx octo-cli services topo <SERVICE> -e online -l 1d
+
+# 4. Query entry points to understand how traffic flows in
+npx octo-cli services entries <SERVICE> -e online -l 1d
+
+# 5. Sample traces to see downstream calls, DB systems, caches, MQ
+npx octo-cli trace search -q "service = <SERVICE>" -e online -l 1h -n 10
+
+# 6. Check if RUM data exists (for frontend services)
+npx octo-cli rum list -q "application.name = <SERVICE>" -e online -l 1d -n 1
+
+# 7. Check error tracking issues for each service
+npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
+```
+
+Write all findings into the context file, replacing `<!-- AGENT: -->` sections.
+The topology and entry points are especially valuable — they enable precise
+cross-service debugging in future conversations.
 
 ## Auth Check
 
@@ -234,8 +264,47 @@ npx octo-cli logs search -q "service = affected-service AND level = ERROR" -l 30
 # 3. Check error tracking issues
 npx octo-cli issues search -q "service = affected-service" --status unresolved
 
-# 4. Find related traces
+# 4. Find error traces — these show the FULL call chain across services
 npx octo-cli trace search -q "service = affected-service AND status = error" -l 30m
+
+# 5. If a trace has a trace_id, search logs across ALL services in that trace
+npx octo-cli logs search -q "trace_id = <TRACE_ID>" -l 1h
+
+# 6. Check service topology to understand blast radius
+npx octo-cli services topo affected-service -l 1h
+```
+
+### Cross-Service Debugging (Trace-Driven)
+
+```bash
+# Start from a trace_id (from logs, alerts, or user reports)
+# 1. Find all spans in this trace across all services
+npx octo-cli trace search -q "trace_id = <TRACE_ID>" -l 1d -n 100
+
+# 2. Search logs from ALL services involved in this trace
+npx octo-cli logs search -q "trace_id = <TRACE_ID>" -l 1d
+
+# 3. If the root cause is in a downstream service, check its topology
+npx octo-cli services topo downstream-service -l 1h
+
+# 4. Check if the downstream has its own error patterns
+npx octo-cli issues search -q "service = downstream-service" --status unresolved
+```
+
+### Map Service Dependencies
+
+```bash
+# 1. Get the full topology graph
+npx octo-cli services topo myapp -e online -l 1d
+
+# 2. List entry points (HTTP routes, RPC methods, MQ consumers)
+npx octo-cli services entries myapp -e online -l 1d
+
+# 3. Sample recent traces to see call patterns and latency
+npx octo-cli trace search -q "service = myapp" -l 1h -n 20
+
+# 4. Check P95 latency per entry point
+npx octo-cli trace aggregate -a "duration:p95" -g name -q "service = myapp" -l 1h
 ```
 
 ### Understand Service Health
@@ -249,6 +318,9 @@ npx octo-cli trace aggregate -a "duration:p95" -g service -l 1h
 
 # 3. Service topology
 npx octo-cli services topo myapp -l 1h
+
+# 4. Recent deployments (may correlate with issues)
+npx octo-cli events -q "service = myapp" -l 1d
 ```
 
 ### Monitor LLM Usage

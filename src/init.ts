@@ -149,33 +149,71 @@ npx octo-cli rum list -q "application.name = <SERVICE>" -l 1d
 npx octo-cli rum list -q "application.name = <SERVICE> AND type = error" -l 1d
 \`\`\`
 
-## Dependencies
+## Dependencies (from Trace)
 
-<!-- AGENT: Map the service dependency graph. Scan for:
+<!-- AGENT: Use LIVE trace data to map the real dependency graph. This is the most
+  reliable source — it shows what ACTUALLY happened in production, not what code
+  might do.
 
-  Upstream (who calls this service):
-  - API gateway / ingress configs
-  - Other services' HTTP client calls to this service
-  - RPC client stubs (thrift, gRPC) that target this service
-  - Message queue consumers that this service publishes to
+  Step 1: Query the service topology for each service found above.
+  Run these commands and record the output:
 
-  Downstream (this service calls):
-  - HTTP clients: fetch/axios/got/RestTemplate/WebClient → target URLs/services
-  - RPC calls: thrift client, gRPC stubs
-  - Databases: MySQL/PostgreSQL/MongoDB connection configs → host/db name
-  - Caches: Redis/Memcached connection configs
-  - Message queues: Kafka producer topics, RabbitMQ exchanges
-  - External APIs: third-party service calls
+    npx octo-cli services topo <SERVICE> -e online -l 1d
 
-  For Java: check application.yml for datasource, redis, kafka, thrift client configs
-  For Node.js: check env vars for DB_HOST, REDIS_URL, KAFKA_BROKERS etc.
+  This returns upstream/downstream services and edges. Record them below.
+
+  Step 2: Check service entry points to understand how traffic flows in:
+
+    npx octo-cli services entries <SERVICE> -e online -l 1d
+
+  This shows HTTP endpoints, RPC methods, MQ consumers — the "doors" into the service.
+
+  Step 3: For richer detail, query trace spans to see specific call patterns:
+
+    # What downstream services does this service call?
+    npx octo-cli trace search -q "service = <SERVICE>" -l 1h -n 20
+
+    # Look at span attributes: peer.service, db.system, messaging.system
+    # These reveal databases, caches, message queues, and external services
+
+  Step 4: Supplement with code analysis for things traces don't capture:
+  - Database names/tables (traces show db.system but not always db.name)
+  - Kafka topic names (traces show messaging.system, sometimes destination)
+  - External HTTP API endpoints
+
+  Write the results below. This section is CRITICAL for cross-service debugging.
 -->
 
-### Upstream
-<!-- AGENT: list services/systems that call into this project -->
+### Topology
 
-### Downstream
-<!-- AGENT: list services/systems this project calls -->
+<!-- AGENT: paste the simplified topology from "services topo" output:
+  e.g.
+  api-gateway → this-service → user-service
+                             → mysql
+                             → redis
+                             → kafka
+-->
+
+### Entry Points
+
+<!-- AGENT: list the service entries from "services entries" output:
+  e.g.
+  - HTTP POST /api/v1/orders (entry)
+  - RPC OrderService.createOrder (entry)
+  - MQ consumer: order-events (entry)
+-->
+
+### Upstream (calls into this service)
+<!-- AGENT: from topo output, list upstreamServices -->
+
+### Downstream (this service calls)
+<!-- AGENT: from topo output, list downstreamServices. Include:
+  - Other services (from edges)
+  - Databases (from trace spans with db.system attribute)
+  - Caches (redis, memcached)
+  - Message queues (kafka, rabbitmq)
+  - External APIs
+-->
 
 ## Notes
 
