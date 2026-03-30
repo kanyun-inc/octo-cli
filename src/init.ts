@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const TEMPLATE = `---
@@ -251,6 +252,35 @@ function findRuleDir(cwd: string): { dir: string; filePath: string } {
 }
 
 export function runInit(targetDir?: string): void {
+  // Check login first — init needs live Octopus data for trace-driven discovery
+  const configPath = path.join(os.homedir(), '.octo-cli', 'config.json');
+  let hasCredentials = false;
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    hasCredentials = !!(config.app_id && config.app_secret);
+  } catch {
+    // no config file
+  }
+  hasCredentials =
+    hasCredentials ||
+    !!(process.env.OCTOPUS_APP_ID && process.env.OCTOPUS_APP_SECRET);
+
+  if (!hasCredentials) {
+    console.error('Error: Not logged in. Run this first:');
+    console.error('');
+    console.error(
+      '  npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>'
+    );
+    console.error('');
+    console.error(
+      'The init command needs Octopus API access so the agent can query'
+    );
+    console.error(
+      'live trace data to discover service topology and dependencies.'
+    );
+    process.exit(1);
+  }
+
   const cwd = targetDir ? path.resolve(targetDir) : process.cwd();
   const { dir, filePath } = findRuleDir(cwd);
 
