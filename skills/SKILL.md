@@ -19,6 +19,23 @@ allowed-tools: Bash(*)
 
 CLI tool `octo-cli` for querying the Octopus observability platform (octopus.zhenguanyu.com). Covers logs, alerts, error tracking, traces, metrics, services, LLM, RUM, and events.
 
+## Project Context Discovery
+
+Before querying, check if this project has observability context:
+
+```bash
+cat .claude/rules/octopus-observability.md 2>/dev/null || cat .cursor/rules/octopus-observability.md 2>/dev/null || echo "NO_CONTEXT"
+```
+
+- **Has content with actual service names**: use those service names in queries
+- **Has template placeholders (<!-- AGENT: -->)**: analyze the codebase and fill it in now:
+  1. Search for Octopus SDK imports: `@octopus-sdk/*`, `opentelemetry-kanyun-*`, octopus javaagent
+  2. Find service names from: package.json, docker-compose, k8s manifests, env vars, Spring configs
+  3. Identify data collection: log/trace/metric/RUM/LLM SDKs
+  4. Map dependencies: HTTP clients → downstream, API routes → upstream, DB/MQ connections
+  5. Write the results into the file, replacing all `<!-- AGENT: -->` sections
+- **NO_CONTEXT**: run `npx octo-cli init` first, then fill it in as above
+
 ## Auth Check
 
 Before first use:

@@ -1,55 +1,88 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const TEMPLATE = `# Octopus Observability Context
+const TEMPLATE = `---
+description: Octopus observability context for this project. Auto-loaded when tasks involve debugging, errors, alerts, performance, logs, traces, or monitoring.
+globs:
+---
 
-> This file helps AI agents understand the observability setup of this project.
-> When investigating errors, performance issues, or debugging, agents should
-> use \`npx octo-cli\` with the context below.
->
-> Install the octo skill: \`npx reskill install github:kanyun-inc/octo-cli/skills -a claude-code cursor -y\`
+# Octopus Observability Context
+
+<!--
+  This file should be filled in by an AI agent, not manually.
+
+  Run this command to have the agent analyze the codebase and fill it in:
+
+    "Analyze this project's codebase and fill in .claude/rules/octopus-observability.md
+     with the actual observability setup. Look at package.json, docker configs,
+     agent configs, SDK imports, environment variables, and service names."
+
+  The agent should:
+  1. Search for Octopus SDK imports (@octopus-sdk/*, opentelemetry-kanyun-*)
+  2. Find service names from configs, env vars, docker-compose, k8s manifests
+  3. Identify data collection methods (javaagent, HTTP upload, Kafka, SDK)
+  4. Map upstream/downstream from code (HTTP clients, MQ producers/consumers, DB connections)
+  5. Find alert rule references or monitoring configs
+-->
+
+## How to Query
+
+\`\`\`bash
+# Install CLI credentials (one-time)
+npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
+
+# Or install the agent skill for deeper guidance
+npx reskill install github:kanyun-inc/octo-cli/skills -a claude-code cursor -y
+\`\`\`
 
 ## Services
 
-<!-- List all services this project deploys. One service per row. -->
+<!-- AGENT: Replace this section. Scan for service names in:
+     - package.json (name field)
+     - docker-compose.yml / Dockerfile (service names, env vars)
+     - k8s manifests (metadata.name, OCTOPUS_SERVICE, SERVICE_NAME)
+     - application.yml / application.properties (spring.application.name)
+     - Octopus SDK init configs (serviceName, service)
+     - Environment variable files (.env, .env.production)
+-->
 
-| Service Name | Description | Environments | Language |
-|-------------|-------------|--------------|----------|
-| \`example-service\` | Main API server | online, test | Java |
-<!-- | \`example-worker\` | Background job processor | online, test | Node.js | -->
+| Service | Env | Language | Description |
+|---------|-----|----------|-------------|
 
 ## Data Collection
 
-<!-- What observability data does this project report? -->
+<!-- AGENT: Replace this section. Search for:
+     - Imports: @octopus-sdk/browser-rum, @octopus-sdk/browser-logs, opentelemetry-kanyun-*
+     - Java: octopus javaagent in JVM args, pom.xml dependencies
+     - Collector: octopus-otel-collector configs
+     - Custom metrics: StatsD, Prometheus client usage
+     - Trace: Skywalking, OpenTelemetry SDK init
+     - RUM: browser SDK init with applicationId
+     - LLM: traceLLM, traceAgent calls
+-->
 
-| Type | SDK / Method | Notes |
-|------|-------------|-------|
-| Logs | <!-- e.g. octopus-otel-collector, HTTP upload, Kafka --> | |
-| Traces | <!-- e.g. javaagent, OpenTelemetry SDK, Skywalking --> | |
-| Metrics | <!-- e.g. custom metrics via SDK, trace metrics (auto) --> | |
-| RUM | <!-- e.g. @octopus-sdk/browser-rum --> | |
-| LLM | <!-- e.g. opentelemetry-kanyun-api --> | |
-| Events | <!-- e.g. deployment events via CI/CD --> | |
+| Type | How | Details |
+|------|-----|---------|
 
 ## Key Queries
 
-<!-- Pre-built queries agents can use directly. Customize for your service. -->
+<!-- AGENT: Replace <SERVICE> with actual service names found above -->
 
 \`\`\`bash
-# Search errors for this service
+# Error logs
 npx octo-cli logs search -q "service = <SERVICE> AND level = ERROR" -l 15m
 
-# Error count by service
+# Error rate by service
 npx octo-cli logs aggregate -q "level = ERROR" -g service -l 1h
 
 # Firing alerts
 npx octo-cli alerts search -s firing -l 1h
 
 # Unresolved issues
-npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 1d
+npx octo-cli issues search -q "service = <SERVICE>" --status unresolved
 
-# Trace errors
-npx octo-cli trace search -q "service = <SERVICE> AND status = error" -l 15m
+# Slow traces
+npx octo-cli trace search -q "service = <SERVICE> AND duration > 1000" -l 15m
 
 # Service topology
 npx octo-cli services topo <SERVICE> -l 1h
@@ -57,44 +90,32 @@ npx octo-cli services topo <SERVICE> -l 1h
 
 ## Dependencies
 
-<!-- Upstream and downstream services. Helps agents trace cross-service issues. -->
+<!-- AGENT: Replace this section. Scan for:
+     - HTTP clients (fetch, axios, got) → downstream services
+     - Database connections (mysql, pg, redis, mongo) → downstream
+     - Message queues (kafka producer/consumer, rabbitmq) → upstream/downstream
+     - gRPC/RPC client stubs → downstream services
+     - API gateway / ingress configs → upstream
+-->
 
 ### Upstream (calls into this service)
-<!-- - \`api-gateway\` -->
 
 ### Downstream (this service calls)
-<!-- - \`user-service\` -->
-<!-- - \`mysql (RDS)\` -->
-<!-- - \`redis\` -->
-<!-- - \`kafka\` -->
-
-## Alert Rules
-
-<!-- Important alert rules to be aware of. -->
-
-| Rule Name | Priority | Type | Description |
-|-----------|----------|------|-------------|
-<!-- | \`error-rate-high\` | P1 | log | ERROR count > 100/min | -->
-
-## Dashboards
-
-<!-- Links to relevant Octopus dashboards. -->
-
-<!-- - [Service Overview](https://octopus.zhenguanyu.com/#/dashboard?id=XXX) -->
 
 ## Notes
 
-<!-- Any other observability context agents should know about. -->
-<!-- e.g. "Canary deployments use env=online with canary=true tag" -->
-<!-- e.g. "Log level is set to WARN in production, use test env for DEBUG logs" -->
+<!-- AGENT: Add anything relevant:
+     - Canary deployment tagging (canary=true)
+     - Log level differences between environments
+     - Known noisy alerts to ignore
+     - Dashboard links if found in code/configs
+-->
 `;
 
 /**
  * Find the best location for the observability rule file.
- * Prefers .claude/rules/, falls back to .cursor/rules/, then project root.
  */
 function findRuleDir(cwd: string): { dir: string; filePath: string } {
-  // Try .claude/rules/ first
   const claudeRules = path.join(cwd, '.claude', 'rules');
   if (fs.existsSync(path.join(cwd, '.claude'))) {
     return {
@@ -103,7 +124,6 @@ function findRuleDir(cwd: string): { dir: string; filePath: string } {
     };
   }
 
-  // Try .cursor/rules/
   const cursorRules = path.join(cwd, '.cursor', 'rules');
   if (fs.existsSync(path.join(cwd, '.cursor'))) {
     return {
@@ -112,7 +132,6 @@ function findRuleDir(cwd: string): { dir: string; filePath: string } {
     };
   }
 
-  // Default to .claude/rules/
   return {
     dir: claudeRules,
     filePath: path.join(claudeRules, 'octopus-observability.md'),
@@ -121,12 +140,13 @@ function findRuleDir(cwd: string): { dir: string; filePath: string } {
 
 export function runInit(targetDir?: string): void {
   const cwd = targetDir ? path.resolve(targetDir) : process.cwd();
-
   const { dir, filePath } = findRuleDir(cwd);
 
   if (fs.existsSync(filePath)) {
     console.log(`Already exists: ${filePath}`);
-    console.log('Edit it to update your observability context.');
+    console.log(
+      'Ask your AI agent to update it based on the current codebase.'
+    );
     return;
   }
 
@@ -135,14 +155,12 @@ export function runInit(targetDir?: string): void {
 
   console.log(`Created: ${filePath}`);
   console.log('');
-  console.log('Next steps:');
-  console.log(
-    '  1. Fill in your service names, environments, and data collection setup'
-  );
-  console.log('  2. Customize the key queries with your actual service names');
-  console.log('  3. List upstream/downstream dependencies');
+  console.log('Now ask your AI agent to analyze the codebase and fill it in:');
   console.log('');
   console.log(
-    'Once filled in, AI agents will automatically use this context when investigating issues.'
+    '  "Analyze this project and fill in .claude/rules/octopus-observability.md'
+  );
+  console.log(
+    '   with the actual services, data collection, dependencies, and queries."'
   );
 }
