@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { generateAuthorizationHeader } from './auth.js';
 
@@ -72,9 +71,9 @@ describe('generateAuthorizationHeader', () => {
       'GET',
       '/api/test'
     );
-    const sig = header.match(/Signature=(.+)$/)?.[1];
-    expect(sig).toBeDefined();
-    const decoded = Buffer.from(sig!, 'base64');
+    const sig = header.match(/Signature=(.+)$/)?.[1] ?? '';
+    expect(sig).not.toBe('');
+    const decoded = Buffer.from(sig, 'base64');
     // HMAC-SHA256 produces 32 bytes
     expect(decoded.length).toBe(32);
   });

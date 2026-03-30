@@ -8,8 +8,16 @@ program
   .description(
     'Octopus Observability CLI — logs, alerts, traces, metrics and more'
   )
-  .version('0.1.0');
+  .version('0.2.0');
 
 registerCommands(program);
+
+program
+  .command('mcp')
+  .description('Start MCP stdio server for AI agent integration')
+  .action(async () => {
+    const { startMcpServer } = await import('./mcp.js');
+    await startMcpServer();
+  });
 
 program.parse();
