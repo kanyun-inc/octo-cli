@@ -1,0 +1,55 @@
+{
+  "name": "octo-cli",
+  "version": "0.1.0",
+  "description": "Octopus Observability CLI — query logs, alerts, traces, metrics and more",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "octo": "./dist/index.js",
+    "octo-cli": "./dist/index.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kanyun-inc/octo-cli"
+  },
+  "license": "MIT",
+  "keywords": [
+    "octopus",
+    "observability",
+    "cli",
+    "logs",
+    "alerts",
+    "traces",
+    "metrics"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.2.0",
+    "@types/node": "^22.15.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
