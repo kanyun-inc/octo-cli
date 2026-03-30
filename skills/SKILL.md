@@ -253,3 +253,28 @@ npx octo-cli llm -q "model.name = claude*" -l 1d
 - Query syntax is case-sensitive for field names and values, case-insensitive for operators.
 - Wildcards (`*`) only work in field search, not full-text search.
 - Use double quotes for exact phrase matching or special characters in queries.
+
+## Deep-Dive Skills
+
+This repo bundles specialized Octopus skills for deeper domain knowledge. Install individually as needed:
+
+```bash
+# Install all at once
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-log-query -a claude-code cursor -y
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-metrics -a claude-code cursor -y
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-rum -a claude-code cursor -y
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-llm-trace -a claude-code cursor -y
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-data-collection -a claude-code cursor -y
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-openapi -a claude-code cursor -y
+npx reskill@latest install github:kanyun-inc/octo-cli/skills/octopus-web-sdk-helper -a claude-code cursor -y
+```
+
+| Skill | Focus |
+|-------|-------|
+| `octopus-log-query` | Log search syntax, charting, log-to-metric, tokenization |
+| `octopus-metrics` | Metric types (Count/Gauge/Histogram), QL syntax, as_count/as_rate, expressions |
+| `octopus-rum` | RUM concepts (Session/View/Action/Error), Web SDK, Core Web Vitals |
+| `octopus-llm-trace` | LLM Trace SDK (Java/TS/Python), span kinds, cost tracking |
+| `octopus-data-collection` | Log/Trace/Metric collection (HTTP, Kafka, javaagent, Node.js, Python) |
+| `octopus-openapi` | OpenAPI signing (V1/V2), SDK integration, all HTTP endpoints |
+| `octopus-web-sdk-helper` | Web SDK troubleshooting, config guidance, sourcemap upload |
