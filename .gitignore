@@ -2,3 +2,9 @@ node_modules
 dist
 *.tsbuildinfo
 .skills
+.claude
+.cursor
+.codex
+.opencode
+skills.json
+skills.lock

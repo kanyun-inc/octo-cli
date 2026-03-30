@@ -13,6 +13,17 @@ program
 registerCommands(program);
 
 program
+  .command('init')
+  .description(
+    'Generate .claude/rules/octopus-observability.md for this project'
+  )
+  .argument('[dir]', 'Target project directory (default: cwd)')
+  .action(async (dir) => {
+    const { runInit } = await import('./init.js');
+    runInit(dir);
+  });
+
+program
   .command('mcp')
   .description('Start MCP stdio server for AI agent integration')
   .action(async () => {
