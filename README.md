@@ -64,6 +64,21 @@ npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
 
 **持续保鲜** —— 上下文不是一次性快照。项目在演进，Agent 在日常排查中如果发现数据和上下文对不上（新 service 出现、拓扑变了、接入了新 SDK、Issue 变了），会当场更新上下文文件。不需要人维护，Agent 自己保鲜。
 
+## 页面 URL 即查询入口
+
+你在 Octopus 页面上看到一个问题，想让 Agent 帮你分析 —— 不需要翻译成查询语句，直接把 URL 贴给它：
+
+```
+你：帮我看看这个页面的数据
+    https://octopus.zhenguanyu.com/#/rum-explorer?env=test&rumExplorerQuery=...&time=1d
+
+Agent：（解析 URL 参数，转成 octo-cli 命令，拿到数据，开始分析）
+```
+
+这个能力的价值在于：**你在页面上看到的和 Agent 查到的是同一份数据。** Octopus 的 URL 参数是语义化的（`env`、`query`、`time`、`application`），Agent 天然能读懂，不需要额外代码。日志页面、链路页面、RUM 页面、告警页面、大盘页面 —— 任何 Octopus URL 都能直接贴。
+
+这意味着你和 Agent 之间有了共同的「指向能力」：你指着页面说"这里有问题"，Agent 立刻能看到同一个视角的数据，然后用它擅长的方式（关联日志、追踪链路、聚合分析）去深挖。
+
 ## 功能特性
 
 - **Agent 原生接入** —— `login` 全局装 Skill，`init` 生成项目上下文，Agent 自己填写
