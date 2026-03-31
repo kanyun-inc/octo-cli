@@ -19,69 +19,69 @@ allowed-tools: Bash(*)
 
 CLI tool `octo-cli` for querying the Octopus observability platform (octopus.zhenguanyu.com). Covers logs, alerts, error tracking, traces, metrics, services, LLM, RUM, and events.
 
-## Project Context Discovery
+## Onboarding (first time in a project)
 
-Before querying, check if this project has observability context:
+When the user says anything like "接入 Octopus", "set up observability", "octo init", or when
+you need observability data but the project has no context yet, run the full onboarding:
 
-```bash
-cat .claude/rules/octopus-observability.md 2>/dev/null || cat .cursor/rules/octopus-observability.md 2>/dev/null || echo "NO_CONTEXT"
-```
-
-- **Has content with actual service names**: use those service names in queries
-- **Has template placeholders (<!-- AGENT: -->)**: bootstrap it now (see Bootstrap workflow below)
-- **NO_CONTEXT**: run `npx octo-cli init` first, then bootstrap
-
-### Bootstrap Workflow (filling in observability context)
-
-When the context file has placeholders, follow this sequence:
-
-```bash
-# 1. Identify project type and find service names from code
-#    Scan: package.json, pom.xml, docker-compose, k8s manifests,
-#    application.yml (spring.application.name), env vars,
-#    @octopus-sdk/browser-rum init (applicationName)
-
-# 2. Verify services exist in Octopus
-npx octo-cli services list -e online -l 1d
-npx octo-cli services list -e test -l 1d
-
-# 3. For each confirmed service, query the LIVE topology — this is the
-#    most reliable way to discover dependencies (what actually runs in prod)
-npx octo-cli services topo <SERVICE> -e online -l 1d
-
-# 4. Query entry points to understand how traffic flows in
-npx octo-cli services entries <SERVICE> -e online -l 1d
-
-# 5. Sample traces to see downstream calls, DB systems, caches, MQ
-npx octo-cli trace search -q "service = <SERVICE>" -e online -l 1h -n 10
-
-# 6. Check if RUM data exists (for frontend services)
-npx octo-cli rum list -q "application.name = <SERVICE>" -e online -l 1d -n 1
-
-# 7. Check error tracking issues for each service
-npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
-```
-
-Write all findings into the context file, replacing `<!-- AGENT: -->` sections.
-The topology and entry points are especially valuable — they enable precise
-cross-service debugging in future conversations.
-
-## Auth Check
-
-Before first use:
+### Step 1: Check auth
 
 ```bash
 cat ~/.octo-cli/config.json 2>/dev/null || echo "NOT CONFIGURED"
 ```
 
-- **Has app_id/app_secret**: proceed
-- **NOT CONFIGURED**: tell the user to get an ApplicationKey from the Octopus platform, then run:
+- **Has app_id/app_secret**: proceed to step 2
+- **NOT CONFIGURED**: ask the user for their Octopus ApplicationKey (appId + appSecret), then:
+  ```bash
+  npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
+  ```
+
+### Step 2: Init (generates template + installs skill)
 
 ```bash
-npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
+npx octo-cli init
 ```
 
-Or set environment variables: `OCTOPUS_APP_ID`, `OCTOPUS_APP_SECRET`.
+This creates `.claude/rules/octopus-observability.md` and installs the octo skill.
+
+### Step 3: Fill in the context (YOU do this, not the user)
+
+Read the generated template, then scan the codebase and query live Octopus data:
+
+**3a. Identify project type and find service names from code:**
+- Scan: package.json, pom.xml, docker-compose, k8s manifests
+- Spring: `application.yml` → `spring.application.name`
+- Frontend: `@octopus-sdk/browser-rum` init → `applicationName`
+- Node.js: env vars `SERVICE_NAME`, `OCTOPUS_SERVICE`
+- Monorepo: check each workspace member independently
+
+**3b. Verify services and query live data:**
+
+```bash
+# Verify services exist
+npx octo-cli services list -e online -l 1d
+npx octo-cli services list -e test -l 1d
+
+# For each service: topology (real upstream/downstream)
+npx octo-cli services topo <SERVICE> -e online -l 1d
+
+# Entry points (HTTP routes, RPC methods, MQ consumers)
+npx octo-cli services entries <SERVICE> -e online -l 1d
+
+# Sample traces (see DB, caches, MQ, external calls)
+npx octo-cli trace search -q "service = <SERVICE>" -e online -l 1h -n 10
+
+# Check RUM (frontend services)
+npx octo-cli rum list -q "application.name = <SERVICE>" -e online -l 1d -n 1
+
+# Check existing issues
+npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
+```
+
+**3c. Write findings into the template**, replacing all `<!-- AGENT: -->` sections.
+
+The whole onboarding should take one conversation. After it's done, every future
+agent session in this project will auto-load the context.
 
 ## Query Syntax
 

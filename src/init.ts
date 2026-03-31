@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -294,15 +295,35 @@ export function runInit(targetDir?: string): void {
 
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, TEMPLATE);
-
   console.log(`Created: ${filePath}`);
+
+  // Install skill so agents know how to use octo-cli
   console.log('');
-  console.log('Now ask your AI agent to analyze the codebase and fill it in:');
+  console.log('Installing octo skill for AI agents...');
+  try {
+    execSync(
+      'npx reskill@latest install github:kanyun-inc/octo-cli/skills -a claude-code cursor codex -y',
+      { cwd, stdio: 'inherit' }
+    );
+  } catch {
+    console.warn(
+      'Warning: skill install failed. You can install manually later:'
+    );
+    console.warn(
+      '  npx reskill install github:kanyun-inc/octo-cli/skills -a claude-code cursor -y'
+    );
+  }
+
+  // Guide: what the agent should do next
   console.log('');
   console.log(
-    '  "Read .claude/rules/octopus-observability.md and follow the AGENT'
+    'Done! Next: let your AI agent fill in the observability context.'
   );
+  console.log('The agent should now:');
+  console.log(`  1. Read the template at ${filePath}`);
+  console.log('  2. Scan the codebase for services, SDKs, and configs');
   console.log(
-    '   instructions to analyze this codebase and fill in the observability context."'
+    '  3. Query Octopus (services list/topo/entries, trace, RUM) to verify'
   );
+  console.log('  4. Fill in all <!-- AGENT: --> sections with real data');
 }

@@ -14,16 +14,21 @@
 ## Quick Start
 
 ```bash
-# Login
+# 1. Login (one-time)
 npx octo-cli login --app-id <YOUR_APP_ID> --app-secret <YOUR_APP_SECRET>
 
-# Search logs
+# 2. Set up your project (in Claude Code or Cursor, just say):
+#    "帮我接入 Octopus 可观测" or "set up Octopus observability"
+#
+#    The agent will automatically:
+#    - Run `npx octo-cli init` (generates template + installs skill)
+#    - Scan your codebase for services, SDKs, configs
+#    - Query live Octopus data (traces, topology, RUM)
+#    - Write the observability context into .claude/rules/
+
+# 3. From now on, any agent in this project can query Octopus:
 npx octo-cli logs search -q "level = ERROR" -l 15m
-
-# Check firing alerts
 npx octo-cli alerts search -s firing -p P0,P1
-
-# Query metrics
 npx octo-cli metrics query "sum(http_requests{service=myapp}.as_count)" -l 1h
 ```
 
@@ -146,6 +151,7 @@ octo-cli users alice bob                                  # Search users by name
 | Command | Description |
 |---------|-------------|
 | `login` | Configure API credentials |
+| `init` | Set up project: generate context template + install skill |
 | `logs search` | Search logs |
 | `logs aggregate` | Aggregate logs with grouping |
 | `alerts search` | Search alerts |
