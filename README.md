@@ -2,7 +2,7 @@
 
 # octo-cli
 
-**Observability for AI Agents — not just tools, but context**
+**让 AI Agent 真正看懂你的系统 —— 不只是工具，更是上下文**
 
 [![npm version](https://img.shields.io/npm/v/octo-cli.svg)](https://www.npmjs.com/package/octo-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,248 +11,241 @@
 
 ---
 
-## Why
+## 为什么需要 octo-cli
 
-Giving an AI agent a handful of observability tools (search logs, query metrics) and expecting it to debug production issues is like handing someone a telescope and asking them to navigate a city. **The tools work, but the agent has no idea where to point them.**
+给 AI Agent 几个可观测工具（查日志、查指标），然后期望它能排查生产问题，就像给人一个望远镜让他在城市里找路 —— 工具能用，但不知道往哪看。
 
-Observability data is vast and varied — logs, traces, metrics, alerts, RUM, LLM spans, error tracking, service topologies — spread across multiple services, environments, and naming conventions. Without knowing *what services this project runs*, *which environment to query*, *what the upstream/downstream dependencies are*, an agent will either ask you repeatedly or guess wrong.
+可观测数据又多又杂：日志、链路、指标、告警、RUM、LLM Span、错误追踪、服务拓扑……分散在不同服务、不同环境、不同命名规则里。Agent 不知道「这个项目跑了哪些服务」「该查哪个环境」「上下游依赖是谁」，要么反复问你，要么瞎猜。
 
-**octo-cli solves this with a three-layer approach:**
+**octo-cli 的解法是三层结构：**
 
-1. **Context first** — `octo init` generates a `.claude/rules/octopus-observability.md` file that the agent fills in by analyzing your codebase and querying live trace data. This becomes the agent's "map" — it knows your services, environments, dependencies, and which queries to run. Every future agent session loads this automatically.
+```
+┌─────────────────────────────────────────────────────────────┐
+│  上下文 (.claude/rules/octopus-observability.md)              │
+│  "这个项目跑了 service X（test 环境）和 Y（线上环境），                │
+│   X 依赖 Redis + PostgreSQL + service Z，查询要用 -e test"       │
+│  → Agent 遇到排查任务时自动加载，知道往哪看                         │
+├─────────────────────────────────────────────────────────────┤
+│  技能 (Skill)                                                │
+│  查询语法、排障流程（告警→日志→链路→拓扑）、接入引导                    │
+│  → Agent 知道怎么查，不只是知道有工具                               │
+├─────────────────────────────────────────────────────────────┤
+│  工具 (CLI + MCP)                                            │
+│  npx octo-cli logs search / trace search / metrics query ... │
+│  → Agent 有了上下文和技能，才能精准地用对工具                        │
+└─────────────────────────────────────────────────────────────┘
+```
 
-2. **Skills for know-how** — The [octo skill](skills/SKILL.md) teaches agents the Octopus query syntax, investigation workflows (alert → logs → traces → topology), and onboarding procedures. It's the "how to navigate" guide.
+**上下文 + 技能 + 工具**，这是「Agent 会 grep 日志」和「Agent 能排查问题」之间的差距。
 
-3. **CLI + MCP for execution** — `octo-cli` commands and MCP tools are the actual instruments. Flexible, composable, pipe-friendly. The agent picks the right tool because it already has the context and know-how.
-
-**Context + Know-how + Tools.** That's the difference between an agent that can grep logs and one that can actually debug your system.
-
-## Quick Start
+## 快速开始
 
 ```bash
-# One command to set up everything:
-npx octo-cli login --app-id <YOUR_APP_ID> --app-secret <YOUR_APP_SECRET>
-# → saves credentials
-# → installs skill globally (all projects, all agents)
+# 一条命令完成所有准备（保存凭证 + 全局安装 Skill）
+npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
 
-# Then in any project, tell your AI agent:
+# 然后在任意项目里，对 AI Agent 说：
 #   "帮我接入 Octopus 可观测"
-#   or "set up Octopus observability"
 #
-# The agent will:
-#   1. Run `npx octo-cli init` (generate context template + install project skill)
-#   2. Scan the codebase (services, SDKs, configs, env vars)
-#   3. Query live Octopus data (traces, topology, RUM, issues)
-#   4. Write the observability context into .claude/rules/
+# Agent 会自动完成：
+#   1. 运行 npx octo-cli init（生成上下文模板 + 安装项目 Skill）
+#   2. 扫描代码（服务名、SDK、配置、环境变量）
+#   3. 查询线上 Octopus 数据（链路拓扑、入口、RUM、Issue）
+#   4. 将可观测上下文写入 .claude/rules/
 #
-# From now on, any agent in this project understands your observability setup.
+# 此后，这个项目里的所有 Agent 都能精准查询 Octopus 数据。
 ```
 
-## How It Works
+## 工作原理
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  .claude/rules/octopus-observability.md                      │
-│  "This project runs service X on env test, Y on env online,  │
-│   X calls Redis + PostgreSQL + service Z, query with -e test" │
-│                                                              │
-│  → Agent auto-loads this when debugging / monitoring         │
-├──────────────────────────────────────────────────────────────┤
-│  Skill: query syntax, investigation workflows, onboarding    │
-│  → Agent knows HOW to query, not just that tools exist       │
-├──────────────────────────────────────────────────────────────┤
-│  CLI: npx octo-cli logs search / trace search / metrics ...  │
-│  MCP: octo_logs_search / octo_trace_search / ...             │
-│  → Agent executes with precision because it has context      │
-└──────────────────────────────────────────────────────────────┘
-```
+上下文文件不是手写的 —— Agent 通过**代码分析**（SDK 导入、服务配置）和**线上链路数据**（真实拓扑、入口、依赖）自动生成。链路数据反映的是生产环境实际在跑什么，比看代码靠谱。
 
-The context file is not hand-written — the agent generates it by combining **code analysis** (finding SDK imports, service configs) with **live trace data** (actual topology, entry points, dependencies). Traces show what *actually* runs in production, not what code *might* do.
+一次对话完成接入，之后每次 Agent 会话自动加载上下文。
 
-## Features
+## 功能特性
 
-- **Agent-native onboarding** — `login` installs the skill globally, `init` bootstraps project context, agent fills it in
-- **Full Octopus OpenAPI coverage** — logs, alerts, issues, traces, metrics, services, LLM, RUM, events, dashboards
-- **Human-friendly time ranges** — `--last 15m`, `--last 2h`, `--last 7d`
-- **Multiple output formats** — `--output json`, `--output table`, `--output jsonl`
-- **MCP Server** — built-in stdio MCP server for AI agent integration
-- **Secure auth** — OC-HMAC-SHA256-2 request signing, credentials stored locally
-- **Bundled skills** — 8 deep-dive skills covering query syntax, metrics QL, RUM, LLM tracing, data collection
+- **Agent 原生接入** —— `login` 全局装 Skill，`init` 生成项目上下文，Agent 自己填写
+- **全量 Octopus OpenAPI 覆盖** —— 日志、告警、Issue、链路、指标、服务、LLM、RUM、事件、大盘
+- **人性化时间范围** —— `--last 15m`、`--last 2h`、`--last 7d`
+- **多种输出格式** —— `--output json`、`--output table`、`--output jsonl`
+- **MCP Server** —— 内置 stdio MCP Server，支持 Claude Code、Cursor 等
+- **安全鉴权** —— OC-HMAC-SHA256-2 请求签名，凭证本地存储
+- **配套 Skill** —— 8 个深度 Skill，覆盖查询语法、指标 QL、RUM、LLM 追踪、数据采集
 
-## Installation
+## 安装
 
-**Requirements:** Node.js >= 22.0.0
+**要求：** Node.js >= 22.0.0
 
 ```bash
-npx octo-cli <command>          # Use directly via npx
-npm install -g octo-cli         # Or global install, then use `octo` shorthand
+npx octo-cli <command>          # 通过 npx 直接使用
+npm install -g octo-cli         # 或全局安装，使用 octo 简写
 ```
 
-## Authentication
+## 认证
 
-1. Create an ApplicationKey on the Octopus platform
-2. You will get: `appId`, `appSecret`
+1. 在 Octopus 平台创建 ApplicationKey
+2. 获取 `appId` 和 `appSecret`
 
 ```bash
-# Login + auto-install skill globally
+# 登录（同时全局安装 Skill）
 octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
 
-# Or via environment variables (CI/CD, containers)
+# 或通过环境变量（CI/CD、容器场景）
 export OCTOPUS_APP_ID=<APP_ID>
 export OCTOPUS_APP_SECRET=<APP_SECRET>
 ```
 
-## Project Setup
+## 项目接入
 
 ```bash
-# In your project directory:
+# 在项目目录下执行：
 octo-cli init
-# → Creates .claude/rules/octopus-observability.md (template with AGENT directives)
-# → Installs octo skill into project
-# → Agent reads the template, scans code, queries Octopus, fills it in
+# → 生成 .claude/rules/octopus-observability.md（带 AGENT 指令的模板）
+# → 安装项目级 Skill
+# → Agent 读取模板 → 扫描代码 → 查询 Octopus → 填写上下文
 ```
 
-The generated context file tells agents:
-- What services this project deploys and in which environments
-- What data collection is in place (logs, traces, metrics, RUM, LLM)
-- Ready-to-use queries with actual service names
-- Service topology and dependencies (from live trace data)
-- Known issues and monitoring queries
+生成的上下文文件会告诉 Agent：
+- 这个项目部署了哪些服务，分别在什么环境
+- 接入了哪些数据采集（日志、链路、指标、RUM、LLM）
+- 用实际服务名填好的查询命令
+- 服务拓扑和上下游依赖（来自线上链路数据）
+- 已知问题和监控查询
 
-## Commands
+## 命令
 
-### Logs
+### 日志
 
 ```bash
-octo-cli logs search -q "level = ERROR" -l 15m          # Search logs
+octo-cli logs search -q "level = ERROR" -l 15m          # 搜索日志
 octo-cli logs search -q "service = myapp" --last 1h -n 100
 octo-cli logs search --from 2024-01-01T00:00:00Z --to 2024-01-01T01:00:00Z
 
-octo-cli logs aggregate -q "level = ERROR" -g service    # Aggregate by service
-octo-cli logs aggregate -a "*:count" -g level:5 -l 30m   # Top 5 levels by count
+octo-cli logs aggregate -q "level = ERROR" -g service    # 按服务聚合
+octo-cli logs aggregate -a "*:count" -g level:5 -l 30m   # 按 level 聚合 Top 5
 ```
 
-### Alerts
+### 告警
 
 ```bash
-octo-cli alerts search -s firing -p P0,P1 -l 1h         # Firing P0/P1 alerts
-octo-cli alerts search --service myapp -s all             # All alerts for a service
-octo-cli alerts rules --group-id 123                      # Search alert rules
-octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h  # Silence an alert
+octo-cli alerts search -s firing -p P0,P1 -l 1h         # 正在触发的 P0/P1 告警
+octo-cli alerts search --service myapp -s all             # 某个服务的所有告警
+octo-cli alerts rules --group-id 123                      # 搜索告警规则
+octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h  # 静默告警
 ```
 
-### Error Tracking (Issues)
+### 错误追踪 (Issue)
 
 ```bash
-octo-cli issues search --status unresolved -l 1h         # Unresolved issues
-octo-cli issues detail <issueId>                          # Issue detail
-octo-cli issues assign --user 123 --ids id1,id2          # Assign issues
-octo-cli issues update --ids id1,id2 -s resolved          # Resolve issues
+octo-cli issues search --status unresolved -l 1h         # 未解决的 Issue
+octo-cli issues detail <issueId>                          # Issue 详情
+octo-cli issues assign --user 123 --ids id1,id2          # 分配 Issue
+octo-cli issues update --ids id1,id2 -s resolved          # 解决 Issue
 ```
 
-### Traces
+### 链路 (Trace)
 
 ```bash
-octo-cli trace search -q "service = myapp" -l 15m        # Search spans
-octo-cli trace aggregate -a "duration:p95" -g service     # P95 latency by service
+octo-cli trace search -q "service = myapp" -l 15m        # 搜索 Span
+octo-cli trace aggregate -a "duration:p95" -g service     # 按服务聚合 P95 延迟
 ```
 
-### Metrics
+### 指标 (Metrics)
 
 ```bash
-octo-cli metrics query "sum(http_requests{}.as_count)" -l 1h       # Timeseries
-octo-cli metrics query "avg(cpu_usage{service=myapp})" --points 50  # With point count
-octo-cli metrics point "sum(error_count{}.as_count)"                 # Single point value
+octo-cli metrics query "sum(http_requests{}.as_count)" -l 1h       # 时序查询
+octo-cli metrics query "avg(cpu_usage{service=myapp})" --points 50  # 指定数据点数
+octo-cli metrics point "sum(error_count{}.as_count)"                 # 单点查询
 ```
 
-### Services / APM
+### 服务 / APM
 
 ```bash
-octo-cli services list -l 1h                              # List active services
-octo-cli services entries myapp -l 1h                     # Service entry points
-octo-cli services topo myapp                              # Service topology graph
+octo-cli services list -l 1h                              # 列出活跃服务
+octo-cli services entries myapp -l 1h                     # 服务入口列表
+octo-cli services topo myapp                              # 服务拓扑图
 ```
 
-### LLM / RUM / Events
+### LLM / RUM / 事件
 
 ```bash
-octo-cli llm -l 1h -q "model.name = gpt-4"              # LLM observability
-octo-cli rum list -e test -q "application.name = myapp" -l 1d   # RUM sessions
-octo-cli rum detail <id>                                  # RUM event detail
-octo-cli events -l 1d                                     # Deployment events
+octo-cli llm -l 1h -q "model.name = gpt-4"              # LLM 可观测
+octo-cli rum list -e test -q "application.name = myapp" -l 1d   # RUM 会话
+octo-cli rum detail <id>                                  # RUM 事件详情
+octo-cli events -l 1d                                     # 部署事件
 ```
 
-### Users
+### 用户
 
 ```bash
-octo-cli users alice bob                                  # Search users by name
+octo-cli users alice bob                                  # 按姓名搜索用户
 ```
 
-## Command Reference
+## 命令速查
 
-| Command | Description |
-|---------|-------------|
-| `login` | Configure credentials + install skill globally |
-| `init` | Set up project: generate context template + install skill |
-| `logs search` | Search logs |
-| `logs aggregate` | Aggregate logs with grouping |
-| `alerts search` | Search alerts |
-| `alerts rules` | Search alert rules |
-| `alerts silence` | Create alert silence |
-| `issues search` | Search error tracking issues |
-| `issues detail` | Get issue detail |
-| `issues assign` | Batch assign issues |
-| `issues update` | Batch update issue status |
-| `trace search` | Search trace spans |
-| `trace aggregate` | Aggregate trace spans |
-| `metrics query` | Query metrics timeseries |
-| `metrics point` | Query single metric point |
-| `services list` | List services |
-| `services entries` | List service entry points |
-| `services topo` | Service topology graph |
-| `llm` | Query LLM spans |
-| `rum list` | List RUM events |
-| `rum detail` | Get RUM event detail |
-| `events` | Query events |
-| `users` | Search users |
-| `mcp` | Start MCP stdio server |
+| 命令 | 说明 |
+|------|------|
+| `login` | 配置凭证 + 全局安装 Skill |
+| `init` | 项目接入：生成上下文模板 + 安装 Skill |
+| `logs search` | 搜索日志 |
+| `logs aggregate` | 日志聚合 |
+| `alerts search` | 搜索告警 |
+| `alerts rules` | 搜索告警规则 |
+| `alerts silence` | 创建告警静默 |
+| `issues search` | 搜索错误追踪 Issue |
+| `issues detail` | Issue 详情 |
+| `issues assign` | 批量分配 Issue |
+| `issues update` | 批量更新 Issue 状态 |
+| `trace search` | 搜索链路 Span |
+| `trace aggregate` | 链路聚合 |
+| `metrics query` | 指标时序查询 |
+| `metrics point` | 指标单点查询 |
+| `services list` | 服务列表 |
+| `services entries` | 服务入口列表 |
+| `services topo` | 服务拓扑图 |
+| `llm` | LLM Span 查询 |
+| `rum list` | RUM 事件列表 |
+| `rum detail` | RUM 事件详情 |
+| `events` | 事件查询 |
+| `users` | 用户搜索 |
+| `mcp` | 启动 MCP Server |
 
-## Common Options
+## 通用选项
 
-All query commands support:
+所有查询命令支持：
 
-| Option | Description | Example |
-|--------|-------------|---------|
-| `-l, --last <duration>` | Relative time range | `15m`, `1h`, `2d`, `1w` |
-| `--from <time>` | Absolute start time | epoch ms or ISO string |
-| `--to <time>` | Absolute end time | epoch ms or ISO string |
-| `-e, --env <env>` | Environment | `online`, `test` |
-| `-q, --query <query>` | Query string | `level = ERROR` |
-| `-o, --output <fmt>` | Output format | `json`, `table`, `jsonl` |
-| `-n, --limit <n>` | Max results | `50` |
+| 选项 | 说明 | 示例 |
+|------|------|------|
+| `-l, --last <duration>` | 相对时间范围 | `15m`、`1h`、`2d`、`1w` |
+| `--from <time>` | 绝对起始时间 | 毫秒时间戳或 ISO 字符串 |
+| `--to <time>` | 绝对结束时间 | 毫秒时间戳或 ISO 字符串 |
+| `-e, --env <env>` | 环境 | `online`、`test` |
+| `-q, --query <query>` | 查询语句 | `level = ERROR` |
+| `-o, --output <fmt>` | 输出格式 | `json`、`table`、`jsonl` |
+| `-n, --limit <n>` | 最大返回条数 | `50` |
 
-## Pipes
+## 管道
 
-Output is stdout-friendly. Combine with `jq`, `grep`, or any Unix tool:
+输出对 stdout 友好，可以和 `jq`、`grep` 等 Unix 工具组合：
 
 ```bash
-# Count errors per service
+# 按服务统计错误数
 octo-cli logs aggregate -q "level = ERROR" -g service -o json | jq '.[].fields.service'
 
-# Firing alerts as one-liner
+# 触发中的告警标题
 octo-cli alerts search -s firing -o jsonl | jq -r '.title'
 
-# Feed into other tools
+# 统计错误 Span 数量
 octo-cli trace search -q "status = error" -o jsonl | wc -l
 ```
 
 ## MCP Server
 
-Built-in MCP server for AI agent integration (Claude Code, Cursor, etc.).
+内置 MCP Server，支持 Claude Code、Cursor 等 AI Agent 直接调用。
 
-### Configuration
+### 配置
 
-Add to your MCP settings (e.g. `~/.claude/claude_desktop_config.json`):
+在 MCP 配置文件中添加（如 `~/.claude/claude_desktop_config.json`）：
 
 ```json
 {
@@ -269,60 +262,60 @@ Add to your MCP settings (e.g. `~/.claude/claude_desktop_config.json`):
 }
 ```
 
-### MCP Tools
+### MCP 工具列表
 
-| Tool | Description |
-|------|-------------|
-| `octo_logs_search` | Search logs with query, time range, limit |
-| `octo_logs_aggregate` | Aggregate logs with grouping |
-| `octo_alerts_search` | Search alerts by status, priority, service |
-| `octo_issues_search` | Search error tracking issues |
-| `octo_trace_search` | Search trace spans |
-| `octo_metrics_query` | Query metrics timeseries |
-| `octo_services_list` | List APM services |
-| `octo_services_topology` | Service call topology graph |
-| `octo_llm_list` | Query LLM observability spans |
-| `octo_rum_list` | Query RUM events |
-| `octo_events_list` | Query events |
+| 工具 | 说明 |
+|------|------|
+| `octo_logs_search` | 搜索日志 |
+| `octo_logs_aggregate` | 日志聚合 |
+| `octo_alerts_search` | 搜索告警 |
+| `octo_issues_search` | 搜索错误追踪 Issue |
+| `octo_trace_search` | 搜索链路 Span |
+| `octo_metrics_query` | 指标时序查询 |
+| `octo_services_list` | 服务列表 |
+| `octo_services_topology` | 服务拓扑图 |
+| `octo_llm_list` | LLM Span 查询 |
+| `octo_rum_list` | RUM 事件查询 |
+| `octo_events_list` | 事件查询 |
 
-## Bundled Skills
+## 配套 Skill
 
-Deep-dive knowledge for specific Octopus domains. Installed automatically with `login` and `init`, or individually:
+面向特定 Octopus 领域的深度知识，`login` 和 `init` 时自动安装，也可单独安装：
 
 ```bash
 npx reskill install github:kanyun-inc/octo-cli/skills/octopus-log-query -a claude-code cursor -y
 ```
 
-| Skill | Focus |
-|-------|-------|
-| `octo` | CLI commands, query syntax, onboarding, investigation workflows |
-| `octopus-log-query` | Log search syntax, charting, log-to-metric, tokenization |
-| `octopus-metrics` | Metric types (Count/Gauge/Histogram), QL syntax, as_count/as_rate |
-| `octopus-rum` | RUM concepts (Session/View/Action/Error), Web SDK, Core Web Vitals |
-| `octopus-llm-trace` | LLM Trace SDK (Java/TS/Python), span kinds, cost tracking |
-| `octopus-data-collection` | Log/Trace/Metric collection (HTTP, Kafka, javaagent, Node.js, Python) |
-| `octopus-openapi` | OpenAPI signing (V1/V2), SDK integration, all HTTP endpoints |
-| `octopus-web-sdk-helper` | Web SDK troubleshooting, config guidance, sourcemap upload |
+| Skill | 领域 |
+|-------|------|
+| `octo` | CLI 命令、查询语法、接入引导、排障流程 |
+| `octopus-log-query` | 日志搜索语法、绘图分析、日志生成指标、分词策略 |
+| `octopus-metrics` | 指标类型（Count/Gauge/Histogram）、QL 语法、as_count/as_rate |
+| `octopus-rum` | RUM 概念（Session/View/Action/Error）、Web SDK、Core Web Vitals |
+| `octopus-llm-trace` | LLM Trace SDK（Java/TS/Python）、Span 类型、成本追踪 |
+| `octopus-data-collection` | 日志/链路/指标采集（HTTP、Kafka、javaagent、Node.js、Python） |
+| `octopus-openapi` | OpenAPI 签名（V1/V2）、SDK 集成、全量 HTTP 接口 |
+| `octopus-web-sdk-helper` | Web SDK 排障、配置指导、Source Map 上传 |
 
-## API Reference
+## API 参考
 
-octo-cli wraps the [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b681749335c62b3ed505be):
+octo-cli 封装了 [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b681749335c62b3ed505be)：
 
-| Domain | Endpoints |
-|--------|-----------|
-| Logs | `/v1/logs/search`, `/v1/logs/aggregate` |
-| Alerts | `/v1/alerts/search`, `/v1/alert/rules/search`, `/v1/alert/rules`, `/v1/alerts/silences/*` |
-| Issues | `/v1/log-error-tracking/issues/*` |
-| Traces | `/v1/trace/span/list`, `/v1/trace/aggregate` |
-| Metrics | `/v1/metrics/query/timeseries`, `/v1/metrics/query/queryMetric` |
-| Services | `/v1/apm/query/*`, `/v1/apm/topology/*` |
+| 领域 | 接口 |
+|------|------|
+| 日志 | `/v1/logs/search`、`/v1/logs/aggregate` |
+| 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
+| Issue | `/v1/log-error-tracking/issues/*` |
+| 链路 | `/v1/trace/span/list`、`/v1/trace/aggregate` |
+| 指标 | `/v1/metrics/query/timeseries`、`/v1/metrics/query/queryMetric` |
+| 服务 | `/v1/apm/query/*`、`/v1/apm/topology/*` |
 | LLM | `/v1/llm/span/list` |
-| RUM | `/v1/rum/list`, `/v1/rum/{id}`, `/v1/rum/aggregate` |
-| Events | `/v1/event/list` |
-| Dashboard | `/v1/dashboards` (CRUD) |
-| Users | `/v1/users/search` |
+| RUM | `/v1/rum/list`、`/v1/rum/{id}`、`/v1/rum/aggregate` |
+| 事件 | `/v1/event/list` |
+| 大盘 | `/v1/dashboards`（CRUD） |
+| 用户 | `/v1/users/search` |
 
-Auth: OC-HMAC-SHA256-2 request signing. Base URL: `https://octopus-app.zhenguanyu.com`.
+鉴权：OC-HMAC-SHA256-2 请求签名。默认地址：`https://octopus-app.zhenguanyu.com`。
 
 ## License
 
