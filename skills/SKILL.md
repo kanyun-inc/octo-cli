@@ -111,6 +111,31 @@ npx octo-cli services topo <SERVICE> -e online -l 1d
 npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
 ```
 
+## Octopus URL → octo-cli 命令
+
+When the user pastes an Octopus page URL, parse the hash parameters and convert to
+the equivalent octo-cli command. URL parameters are semantic and self-explanatory:
+
+```
+https://octopus.zhenguanyu.com/#/rum-explorer?env=test&rumExplorerQuery=...&rumExplorerQueryEventType=resource&rumExplorerSelectedApplication=rush-app&time=1d
+→ npx octo-cli rum list -e test -q "<decoded rumExplorerQuery>" -l 1d
+
+https://octopus.zhenguanyu.com/#/log-explorer?env=online&query=service%3Dmyapp&time=15m
+→ npx octo-cli logs search -e online -q "service=myapp" -l 15m
+
+https://octopus.zhenguanyu.com/#/trace-explorer?env=test&query=...&time=1h
+→ npx octo-cli trace search -e test -q "<decoded query>" -l 1h
+
+https://octopus.zhenguanyu.com/#/dashboard/detail?id=3117&env=test&time=1d&var-cluster=...
+→ Dashboard — extract metric names from dashboard config, query with octo-cli metrics
+
+https://octopus.zhenguanyu.com/#/alert?env=online&status=firing
+→ npx octo-cli alerts search -e online -s firing
+```
+
+Key URL parameter mappings: `env` → `-e`, `time` → `-l`, `query`/`rumExplorerQuery` → `-q`,
+`rumExplorerQueryEventType` → determines rum type filter, `rumExplorerSelectedApplication` → application.name in query.
+
 ## Query Syntax
 
 All `-q/--query` options use Octopus search syntax:
