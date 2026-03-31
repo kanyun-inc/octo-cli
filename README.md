@@ -79,6 +79,26 @@ Agent：（解析 URL 参数，转成 octo-cli 命令，拿到数据，开始分
 
 这意味着你和 Agent 之间有了共同的「指向能力」：你指着页面说"这里有问题"，Agent 立刻能看到同一个视角的数据，然后用它擅长的方式（关联日志、追踪链路、聚合分析）去深挖。
 
+### 真实案例：从一个 URL 到定位循环请求 Bug
+
+```
+你：帮我看看这个页面的数据
+    https://octopus.zhenguanyu.com/#/rum-explorer?env=test
+    &rumExplorerQuery=ei81ddb36uku%20AND%20resource.type%20%3D%20fetch
+    &rumExplorerQueryEventType=resource
+    &rumExplorerSelectedApplication=rush-app&time=1d
+```
+
+Agent 做的事情：
+
+1. **解析 URL** → 识别出 RUM resource 查询，env=test，应用=rush-app，时间=1d
+2. **转成 octo-cli 命令执行** → `octo-cli rum list -e test -q "application.name = rush-app AND resource.type = fetch AND ..." -l 1d`
+3. **发现异常** → 200 条 fetch 事件中，三个接口频次异常高：`ai-stream-v2` 41 次、`heart` 38 次、`generate-title` 37 次（正常请求 2-8 次）
+4. **时间分析** → 这三个请求集中在 3 秒内，平均间隔 0.1-0.2 秒，明显是循环
+5. **定位代码** → 读 chat-view.tsx，发现 `useChat` 的 resume 机制 + `onFinish` 回调 + 状态刷新形成循环：resume → 流结束 → onFinish → 刷新状态 → transport 重建 → 再次 resume
+
+**从贴 URL 到定位根因，一次对话。** 你在页面上看到"这些请求数量不对"，Agent 用同一份数据确认了你的直觉，然后做了你不想手动做的事：统计频次、分析时间分布、追到代码里找循环。
+
 ## 功能特性
 
 - **Agent 原生接入** —— `login` 全局装 Skill，`init` 生成项目上下文，Agent 自己填写
