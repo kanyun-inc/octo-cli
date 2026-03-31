@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import type { Command } from 'commander';
 import { OctoClient } from './client.js';
 import {
@@ -26,9 +27,34 @@ export function registerCommands(program: Command): void {
     .requiredOption('--app-secret <secret>', 'Application Secret')
     .option('--url <url>', 'Base URL')
     .option('--env <env>', 'Default environment')
+    .option('--skip-skill', 'Skip global skill installation')
     .action(async (opts) => {
       saveConfig(opts.appId, opts.appSecret, opts.url, opts.env);
       console.log(`Credentials saved to ${getConfigPath()}`);
+
+      if (!opts.skipSkill) {
+        console.log('');
+        console.log('Installing octo skill globally for AI agents...');
+        try {
+          execSync(
+            'npx reskill@latest install github:kanyun-inc/octo-cli/skills -g -y -a claude-code cursor codex',
+            { stdio: 'inherit' }
+          );
+          console.log('');
+          console.log(
+            'Done! AI agents now know how to use Octopus. In any project, just say:'
+          );
+          console.log(
+            '  "帮我接入 Octopus 可观测" or "set up Octopus observability"'
+          );
+        } catch {
+          console.warn('');
+          console.warn('Skill install failed. You can install manually later:');
+          console.warn(
+            '  npx reskill install github:kanyun-inc/octo-cli/skills -g -y -a claude-code cursor'
+          );
+        }
+      }
     });
 
   // ─── logs search ─────────────────────────────────────────
