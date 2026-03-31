@@ -40,21 +40,21 @@ export function registerCommands(program: Command): void {
             'npx reskill@latest install github:kanyun-inc/octo-cli/skills -g -y -a claude-code cursor codex',
             { stdio: 'inherit' }
           );
-          console.log('');
-          console.log(
-            'Done! AI agents now know how to use Octopus. In any project, just say:'
-          );
-          console.log(
-            '  "帮我接入 Octopus 可观测" or "set up Octopus observability"'
-          );
         } catch {
-          console.warn('');
-          console.warn('Skill install failed. You can install manually later:');
           console.warn(
-            '  npx reskill install github:kanyun-inc/octo-cli/skills -g -y -a claude-code cursor'
+            'Skill install failed. Run manually: npx reskill install github:kanyun-inc/octo-cli/skills -g -y -a claude-code cursor'
           );
         }
       }
+
+      console.log('');
+      console.log('Done! In any project, tell your AI agent:');
+      console.log(
+        '  "帮我接入 Octopus 可观测" or "set up Octopus observability"'
+      );
+      console.log('');
+      console.log('Optional: register MCP server for Claude Code:');
+      console.log('  npx octo-cli mcp-install');
     });
 
   // ─── logs search ─────────────────────────────────────────
