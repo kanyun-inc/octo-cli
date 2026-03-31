@@ -83,6 +83,34 @@ npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
 The whole onboarding should take one conversation. After it's done, every future
 agent session in this project will auto-load the context.
 
+### Keeping Context Fresh
+
+The context file is a living document, not a one-time snapshot. When you're querying
+Octopus during any task, watch for signs that the context is stale:
+
+- **Unknown service**: query returns data for a service not listed in the context file
+- **Topology changed**: `services topo` shows new upstream/downstream not documented
+- **New data collection**: find SDK imports (RUM, LLM, etc.) in code that aren't in the context
+- **Service gone**: a documented service returns no data in recent queries
+- **Known issues resolved or new ones appeared**
+
+When you spot a mismatch, **update the context file immediately** — don't just use the
+correct data for your current task and leave the file stale. Future agents (and future you)
+depend on it being accurate.
+
+Quick refresh commands:
+```bash
+# Compare documented services vs what's actually reporting
+npx octo-cli services list -e online -l 1d
+npx octo-cli services list -e test -l 1d
+
+# Re-check topology for a known service
+npx octo-cli services topo <SERVICE> -e online -l 1d
+
+# Check current top issues (may have changed)
+npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
+```
+
 ## Query Syntax
 
 All `-q/--query` options use Octopus search syntax:
