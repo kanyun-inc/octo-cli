@@ -2,7 +2,7 @@
 
 # octo-cli
 
-**Octopus Observability CLI & MCP Server — query logs, alerts, traces, metrics and more from terminal and AI agents**
+**Observability for AI Agents — not just tools, but context**
 
 [![npm version](https://img.shields.io/npm/v/octo-cli.svg)](https://www.npmjs.com/package/octo-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,35 +11,73 @@
 
 ---
 
+## Why
+
+Giving an AI agent a handful of observability tools (search logs, query metrics) and expecting it to debug production issues is like handing someone a telescope and asking them to navigate a city. **The tools work, but the agent has no idea where to point them.**
+
+Observability data is vast and varied — logs, traces, metrics, alerts, RUM, LLM spans, error tracking, service topologies — spread across multiple services, environments, and naming conventions. Without knowing *what services this project runs*, *which environment to query*, *what the upstream/downstream dependencies are*, an agent will either ask you repeatedly or guess wrong.
+
+**octo-cli solves this with a three-layer approach:**
+
+1. **Context first** — `octo init` generates a `.claude/rules/octopus-observability.md` file that the agent fills in by analyzing your codebase and querying live trace data. This becomes the agent's "map" — it knows your services, environments, dependencies, and which queries to run. Every future agent session loads this automatically.
+
+2. **Skills for know-how** — The [octo skill](skills/SKILL.md) teaches agents the Octopus query syntax, investigation workflows (alert → logs → traces → topology), and onboarding procedures. It's the "how to navigate" guide.
+
+3. **CLI + MCP for execution** — `octo-cli` commands and MCP tools are the actual instruments. Flexible, composable, pipe-friendly. The agent picks the right tool because it already has the context and know-how.
+
+**Context + Know-how + Tools.** That's the difference between an agent that can grep logs and one that can actually debug your system.
+
 ## Quick Start
 
 ```bash
-# 1. Login (one-time)
+# One command to set up everything:
 npx octo-cli login --app-id <YOUR_APP_ID> --app-secret <YOUR_APP_SECRET>
+# → saves credentials
+# → installs skill globally (all projects, all agents)
 
-# 2. Set up your project (in Claude Code or Cursor, just say):
-#    "帮我接入 Octopus 可观测" or "set up Octopus observability"
+# Then in any project, tell your AI agent:
+#   "帮我接入 Octopus 可观测"
+#   or "set up Octopus observability"
 #
-#    The agent will automatically:
-#    - Run `npx octo-cli init` (generates template + installs skill)
-#    - Scan your codebase for services, SDKs, configs
-#    - Query live Octopus data (traces, topology, RUM)
-#    - Write the observability context into .claude/rules/
-
-# 3. From now on, any agent in this project can query Octopus:
-npx octo-cli logs search -q "level = ERROR" -l 15m
-npx octo-cli alerts search -s firing -p P0,P1
-npx octo-cli metrics query "sum(http_requests{service=myapp}.as_count)" -l 1h
+# The agent will:
+#   1. Run `npx octo-cli init` (generate context template + install project skill)
+#   2. Scan the codebase (services, SDKs, configs, env vars)
+#   3. Query live Octopus data (traces, topology, RUM, issues)
+#   4. Write the observability context into .claude/rules/
+#
+# From now on, any agent in this project understands your observability setup.
 ```
+
+## How It Works
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  .claude/rules/octopus-observability.md                      │
+│  "This project runs service X on env test, Y on env online,  │
+│   X calls Redis + PostgreSQL + service Z, query with -e test" │
+│                                                              │
+│  → Agent auto-loads this when debugging / monitoring         │
+├──────────────────────────────────────────────────────────────┤
+│  Skill: query syntax, investigation workflows, onboarding    │
+│  → Agent knows HOW to query, not just that tools exist       │
+├──────────────────────────────────────────────────────────────┤
+│  CLI: npx octo-cli logs search / trace search / metrics ...  │
+│  MCP: octo_logs_search / octo_trace_search / ...             │
+│  → Agent executes with precision because it has context      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The context file is not hand-written — the agent generates it by combining **code analysis** (finding SDK imports, service configs) with **live trace data** (actual topology, entry points, dependencies). Traces show what *actually* runs in production, not what code *might* do.
 
 ## Features
 
+- **Agent-native onboarding** — `login` installs the skill globally, `init` bootstraps project context, agent fills it in
 - **Full Octopus OpenAPI coverage** — logs, alerts, issues, traces, metrics, services, LLM, RUM, events, dashboards
 - **Human-friendly time ranges** — `--last 15m`, `--last 2h`, `--last 7d`
 - **Multiple output formats** — `--output json`, `--output table`, `--output jsonl`
-- **MCP Server** — built-in stdio MCP server for AI agent integration (Claude Code, Cursor, etc.)
+- **MCP Server** — built-in stdio MCP server for AI agent integration
 - **Secure auth** — OC-HMAC-SHA256-2 request signing, credentials stored locally
-- **Zero dependencies at runtime** — only `commander` and `@modelcontextprotocol/sdk`
+- **Bundled skills** — 8 deep-dive skills covering query syntax, metrics QL, RUM, LLM tracing, data collection
 
 ## Installation
 
@@ -50,32 +88,36 @@ npx octo-cli <command>          # Use directly via npx
 npm install -g octo-cli         # Or global install, then use `octo` shorthand
 ```
 
-> Global install registers both `octo-cli` and `octo` commands. Examples below use `octo-cli`; replace with `octo` if installed globally.
-
 ## Authentication
 
 1. Create an ApplicationKey on the Octopus platform
-2. You will get: `appId`, `appSecret`, `tenantId`, `name`
-
-Then configure:
+2. You will get: `appId`, `appSecret`
 
 ```bash
-# Option 1: login command (saved to ~/.octo-cli/config.json)
+# Login + auto-install skill globally
 octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
 
-# Option 2: environment variables
+# Or via environment variables (CI/CD, containers)
 export OCTOPUS_APP_ID=<APP_ID>
 export OCTOPUS_APP_SECRET=<APP_SECRET>
 ```
 
-Optional settings:
+## Project Setup
 
 ```bash
-octo-cli login --app-id <ID> --app-secret <SECRET> --url <BASE_URL> --env test
-# Or via env vars:
-export OCTOPUS_BASE_URL=https://octopus-app.zhenguanyu.com  # default
-export OCTOPUS_ENV=online                                     # default
+# In your project directory:
+octo-cli init
+# → Creates .claude/rules/octopus-observability.md (template with AGENT directives)
+# → Installs octo skill into project
+# → Agent reads the template, scans code, queries Octopus, fills it in
 ```
+
+The generated context file tells agents:
+- What services this project deploys and in which environments
+- What data collection is in place (logs, traces, metrics, RUM, LLM)
+- Ready-to-use queries with actual service names
+- Service topology and dependencies (from live trace data)
+- Known issues and monitoring queries
 
 ## Commands
 
@@ -150,7 +192,7 @@ octo-cli users alice bob                                  # Search users by name
 
 | Command | Description |
 |---------|-------------|
-| `login` | Configure API credentials |
+| `login` | Configure credentials + install skill globally |
 | `init` | Set up project: generate context template + install skill |
 | `logs search` | Search logs |
 | `logs aggregate` | Aggregate logs with grouping |
@@ -242,6 +284,25 @@ Add to your MCP settings (e.g. `~/.claude/claude_desktop_config.json`):
 | `octo_llm_list` | Query LLM observability spans |
 | `octo_rum_list` | Query RUM events |
 | `octo_events_list` | Query events |
+
+## Bundled Skills
+
+Deep-dive knowledge for specific Octopus domains. Installed automatically with `login` and `init`, or individually:
+
+```bash
+npx reskill install github:kanyun-inc/octo-cli/skills/octopus-log-query -a claude-code cursor -y
+```
+
+| Skill | Focus |
+|-------|-------|
+| `octo` | CLI commands, query syntax, onboarding, investigation workflows |
+| `octopus-log-query` | Log search syntax, charting, log-to-metric, tokenization |
+| `octopus-metrics` | Metric types (Count/Gauge/Histogram), QL syntax, as_count/as_rate |
+| `octopus-rum` | RUM concepts (Session/View/Action/Error), Web SDK, Core Web Vitals |
+| `octopus-llm-trace` | LLM Trace SDK (Java/TS/Python), span kinds, cost tracking |
+| `octopus-data-collection` | Log/Trace/Metric collection (HTTP, Kafka, javaagent, Node.js, Python) |
+| `octopus-openapi` | OpenAPI signing (V1/V2), SDK integration, all HTTP endpoints |
+| `octopus-web-sdk-helper` | Web SDK troubleshooting, config guidance, sourcemap upload |
 
 ## API Reference
 
