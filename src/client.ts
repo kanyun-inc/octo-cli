@@ -111,6 +111,8 @@ export class OctoClient {
     services?: string[];
     limit?: number;
     pageNo?: number;
+    groupId?: number;
+    ruleIds?: number[];
   }) {
     return this.post('/infra-octopus-openapi/v1/alerts/search', params);
   }
@@ -135,7 +137,7 @@ export class OctoClient {
   }
 
   async alertRulesDelete(ruleId: number) {
-    return this.del(`/infra-octopus-openapi/v1/alert/rules`, { ruleId });
+    return this.del('/infra-octopus-openapi/v1/alert/rules', ruleId);
   }
 
   async alertSilenceCreate(params: {

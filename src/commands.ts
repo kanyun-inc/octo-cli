@@ -153,6 +153,8 @@ export function registerCommands(program: Command): void {
     .option('-s, --status <status>', 'firing, resolved, or all', 'all')
     .option('-p, --priority <p>', 'Priority filter (comma-separated: P0,P1,P2)')
     .option('--service <svc>', 'Service filter (comma-separated)')
+    .option('--group-id <id>', 'Alert rule group ID')
+    .option('--rule-ids <ids>', 'Comma-separated alert rule IDs')
     .option('-n, --limit <n>', 'Max results', '20')
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (opts) => {
@@ -167,6 +169,10 @@ export function registerCommands(program: Command): void {
         query: opts.query,
         services: opts.service?.split(','),
         limit: Number.parseInt(opts.limit, 10),
+        groupId: opts.groupId ? Number.parseInt(opts.groupId, 10) : undefined,
+        ruleIds: opts.ruleIds
+          ?.split(',')
+          .map((id: string) => Number.parseInt(id, 10)),
       });
       printOutput(data, opts.output as OutputFormat);
     });
@@ -179,6 +185,16 @@ export function registerCommands(program: Command): void {
     .option('-p, --priority <p>', 'Priority')
     .option('-s, --search <input>', 'Search keyword')
     .option('--service <svc>', 'Service')
+    .option(
+      '--status-list <statuses>',
+      'Status filter (comma-separated: enabled,disabled,paused,silenced)'
+    )
+    .option(
+      '--types <types>',
+      'Rule type filter (comma-separated: log,metric,issue,rum,llm)'
+    )
+    .option('--tags <tags>', 'Tag filter (comma-separated)')
+    .option('--creator <creator>', 'Creator name')
     .option('--page <n>', 'Page number', '1')
     .option('--page-size <n>', 'Page size', '20')
     .option('-o, --output <fmt>', 'Output format', 'json')
@@ -190,6 +206,10 @@ export function registerCommands(program: Command): void {
         priority: opts.priority,
         searchInput: opts.search,
         service: opts.service,
+        statusList: opts.statusList?.split(','),
+        types: opts.types?.split(','),
+        tags: opts.tags?.split(','),
+        creator: opts.creator,
         pageParam: {
           pageNo: Number.parseInt(opts.page, 10),
           pageSize: Number.parseInt(opts.pageSize, 10),
@@ -221,6 +241,44 @@ export function registerCommands(program: Command): void {
       });
       console.log('Silence created');
       if (data) printOutput(data);
+    });
+
+  alerts
+    .command('create')
+    .description('Create alert rules from JSON file')
+    .requiredOption(
+      '--file <path>',
+      'Path to JSON file containing alert rules array'
+    )
+    .action(async (opts) => {
+      const { readFileSync } = await import('node:fs');
+      const content = readFileSync(opts.file, 'utf-8');
+      const rules = JSON.parse(content);
+      const arr = Array.isArray(rules) ? rules : [rules];
+      const client = getClient();
+      const data = await client.alertRulesCreate(arr);
+      console.log('Alert rules created');
+      if (data) printOutput(data);
+    });
+
+  alerts
+    .command('delete')
+    .description('Delete an alert rule')
+    .argument('<ruleId>', 'Alert rule ID')
+    .action(async (ruleId) => {
+      const client = getClient();
+      await client.alertRulesDelete(Number.parseInt(ruleId, 10));
+      console.log('Alert rule deleted');
+    });
+
+  alerts
+    .command('unsilence')
+    .description('Delete alert silence')
+    .argument('<ruleId>', 'Alert rule ID')
+    .action(async (ruleId) => {
+      const client = getClient();
+      await client.alertSilenceDelete(Number.parseInt(ruleId, 10));
+      console.log('Silence deleted');
     });
 
   // ─── issues ──────────────────────────────────────────────

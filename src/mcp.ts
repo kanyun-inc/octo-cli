@@ -167,7 +167,158 @@ export async function startMcpServer(): Promise<void> {
               description: 'Service name filter',
             },
             limit: { type: 'number', description: 'Max results' },
+            groupId: {
+              type: 'number',
+              description: 'Alert rule group ID',
+            },
+            ruleIds: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Filter by specific alert rule IDs',
+            },
           },
+        },
+      },
+      {
+        name: 'octo_alerts_rules_search',
+        description:
+          'Search Octopus alert rules. Filter by group, env, priority, status, type, tags, creator.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            groupId: {
+              type: 'number',
+              description: 'Alert rule group ID (-1 for all groups)',
+            },
+            env: envProp,
+            priority: {
+              type: 'string',
+              description: 'Priority filter: P0, P1, P2',
+            },
+            statusList: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Status filter: enabled, disabled, paused, silenced',
+            },
+            searchInput: {
+              type: 'string',
+              description: 'Search keyword for rule name',
+            },
+            types: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Rule type filter: log, metric, issue, rum, llm',
+            },
+            service: { type: 'string', description: 'Service name filter' },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Tag filter',
+            },
+            creator: { type: 'string', description: 'Creator name filter' },
+            pageNo: { type: 'number', description: 'Page number (default 1)' },
+            pageSize: {
+              type: 'number',
+              description: 'Page size (default 20)',
+            },
+          },
+        },
+      },
+      {
+        name: 'octo_alerts_rules_create',
+        description:
+          'Create Octopus alert rules. Accepts an array of rule objects. ' +
+          'Each rule needs: name, env, groupId, ruleType (log/metric/issue/rum/llm), ' +
+          'priority (P0/P1/P2/UNKNOWN), conditionEvaluationType (single/and/or), ' +
+          'conditions (array with period, comparison, threshold, alertQueryInfo), ' +
+          'notice (receivers, repeatNoticeInterval, effectiveWeeks, etc.), tags, active. ' +
+          'Tip: use octo_alerts_rules_search to find existing rules as payload templates.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            rules: {
+              type: 'array',
+              items: { type: 'object' },
+              description:
+                'Array of alert rule objects (AlertRuleCreateVO). See tool description for required fields.',
+            },
+          },
+          required: ['rules'],
+        },
+      },
+      {
+        name: 'octo_alerts_rules_delete',
+        description: 'Delete an Octopus alert rule by ID.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            ruleId: {
+              type: 'number',
+              description: 'Alert rule ID to delete',
+            },
+          },
+          required: ['ruleId'],
+        },
+      },
+      {
+        name: 'octo_alerts_silence_create',
+        description:
+          'Create an alert silence (mute) in Octopus. Suppresses notifications for a rule during a time window.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            ruleId: {
+              type: 'number',
+              description: 'Alert rule ID to silence',
+            },
+            alertId: {
+              type: 'number',
+              description: 'Specific alert ID to silence',
+            },
+            durationMinutes: {
+              type: 'number',
+              description:
+                'Silence duration in minutes (e.g. 120 for 2 hours). Alternative to endTime.',
+            },
+            startTime: {
+              type: 'number',
+              description: 'Silence start time in epoch ms (default: now)',
+            },
+            endTime: {
+              type: 'number',
+              description:
+                'Silence end time in epoch ms. Required if durationMinutes is not set.',
+            },
+            scope: {
+              type: 'string',
+              description: 'Silence scope',
+              enum: ['ALL', 'SPECIFY'],
+            },
+            specifyGroups: {
+              type: 'object',
+              description:
+                'When scope=specify, map of group field to values array',
+            },
+            silentlyNotify: {
+              type: 'boolean',
+              description: 'Whether to send notification about the silence',
+            },
+          },
+          required: ['ruleId', 'alertId'],
+        },
+      },
+      {
+        name: 'octo_alerts_silence_delete',
+        description: 'Delete (cancel) an alert silence in Octopus.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            ruleId: {
+              type: 'number',
+              description: 'Alert rule ID whose silence to remove',
+            },
+          },
+          required: ['ruleId'],
         },
       },
       {
@@ -371,8 +522,74 @@ export async function startMcpServer(): Promise<void> {
             priorities: args.priorities as string[] | undefined,
             services: args.services as string[] | undefined,
             limit: args.limit as number | undefined,
+            groupId: args.groupId as number | undefined,
+            ruleIds: args.ruleIds as number[] | undefined,
           });
           return ok(JSON.stringify(data, null, 2));
+        }
+
+        case 'octo_alerts_rules_search': {
+          const data = await client.alertRulesSearch({
+            groupId: (args.groupId as number) ?? -1,
+            env: args.env as string | undefined,
+            priority: args.priority as string | undefined,
+            statusList: args.statusList as string[] | undefined,
+            searchInput: args.searchInput as string | undefined,
+            types: args.types as string[] | undefined,
+            service: args.service as string | undefined,
+            tags: args.tags as string[] | undefined,
+            creator: args.creator as string | undefined,
+            pageParam: {
+              pageNo: (args.pageNo as number) ?? 1,
+              pageSize: (args.pageSize as number) ?? 20,
+            },
+          });
+          return ok(JSON.stringify(data, null, 2));
+        }
+
+        case 'octo_alerts_rules_create': {
+          const rules = args.rules as unknown[];
+          if (!Array.isArray(rules) || rules.length === 0) {
+            return fail('rules must be a non-empty array');
+          }
+          const data = await client.alertRulesCreate(rules);
+          return ok(JSON.stringify(data, null, 2));
+        }
+
+        case 'octo_alerts_rules_delete': {
+          const ruleId = args.ruleId as number;
+          await client.alertRulesDelete(ruleId);
+          return ok(`Alert rule ${ruleId} deleted`);
+        }
+
+        case 'octo_alerts_silence_create': {
+          const now = Date.now();
+          const startTime = (args.startTime as number) ?? now;
+          let endTime = args.endTime as number | undefined;
+          if (!endTime && args.durationMinutes) {
+            endTime = startTime + (args.durationMinutes as number) * 60_000;
+          }
+          if (!endTime) {
+            return fail('Either endTime or durationMinutes is required');
+          }
+          const data = await client.alertSilenceCreate({
+            ruleId: args.ruleId as number,
+            alertId: args.alertId as number,
+            startTime,
+            endTime,
+            scope: (args.scope as string) ?? 'ALL',
+            specifyGroups: args.specifyGroups as
+              | Record<string, string[]>
+              | undefined,
+            silentlyNotify: (args.silentlyNotify as boolean) ?? false,
+          });
+          return ok(JSON.stringify(data, null, 2));
+        }
+
+        case 'octo_alerts_silence_delete': {
+          const ruleId = args.ruleId as number;
+          await client.alertSilenceDelete(ruleId);
+          return ok(`Silence for rule ${ruleId} deleted`);
         }
 
         case 'octo_issues_search': {
