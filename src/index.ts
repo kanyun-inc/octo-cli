@@ -8,7 +8,7 @@ program
   .description(
     'Octopus Observability CLI — logs, alerts, traces, metrics and more'
   )
-  .version('0.4.0');
+  .version('0.5.0');
 
 registerCommands(program);
 
