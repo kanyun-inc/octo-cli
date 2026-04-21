@@ -6,13 +6,19 @@ interface ApiResponse<T = unknown> {
   message: string;
 }
 
+type AuthConfig =
+  | { mode: 'token'; token: string }
+  | { mode: 'appKey'; appId: string; appSecret: string };
+
 export class OctoClient {
+  private authConfig: AuthConfig;
+
   constructor(
     private baseUrl: string,
-    private appId: string,
-    private appSecret: string
+    authConfig: AuthConfig
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.authConfig = authConfig;
   }
 
   private async request<T>(
@@ -23,14 +29,19 @@ export class OctoClient {
     const url = `${this.baseUrl}${apiPath}`;
     const payload = body ? JSON.stringify(body) : '';
 
-    const authorization = generateAuthorizationHeader(
-      this.appId,
-      this.appSecret,
-      method,
-      apiPath,
-      '',
-      payload
-    );
+    let authorization: string;
+    if (this.authConfig.mode === 'token') {
+      authorization = `Bearer ${this.authConfig.token}`;
+    } else {
+      authorization = generateAuthorizationHeader(
+        this.authConfig.appId,
+        this.authConfig.appSecret,
+        method,
+        apiPath,
+        '',
+        payload
+      );
+    }
 
     const res = await fetch(url, {
       method,

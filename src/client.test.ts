@@ -17,7 +17,7 @@ function captureFetch() {
 }
 
 describe('OctoClient alert methods', () => {
-  const client = new OctoClient('https://example.com', 'testId', 'testSecret');
+  const client = new OctoClient('https://example.com', { mode: 'appKey', appId: 'testId', appSecret: 'testSecret' });
 
   it('alertRulesDelete sends plain number as body (not object)', async () => {
     const calls = captureFetch();
