@@ -42,7 +42,7 @@
 
 ```bash
 # 一条命令完成所有准备（保存凭证 + 全局安装 Skill）
-npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
+npx octo-cli login --token <YOUR_PERSONAL_ACCESS_TOKEN>
 
 # 然后在任意项目里，对 AI Agent 说：
 #   "帮我接入 Octopus 可观测"
@@ -128,7 +128,7 @@ $ # 根因：resume 机制 + onFinish 回调 + 状态刷新形成无限循环
 - **人性化时间范围** —— `--last 15m`、`--last 2h`、`--last 7d`
 - **多种输出格式** —— `--output json`、`--output table`、`--output jsonl`
 - **MCP Server** —— 内置 stdio MCP Server，支持 Claude Code、Cursor 等
-- **安全鉴权** —— OC-HMAC-SHA256-2 请求签名，凭证本地存储
+- **安全鉴权** —— 支持 Personal Access Token（推荐）和 Application Key 两种认证方式
 - **配套 Skill** —— 8 个深度 Skill，覆盖查询语法、指标 QL、RUM、LLM 追踪、数据采集
 
 ## 安装
@@ -142,14 +142,27 @@ npm install -g octo-cli         # 或全局安装，使用 octo 简写
 
 ## 认证
 
-1. 在 Octopus 平台创建 ApplicationKey
-2. 获取 `appId` 和 `appSecret`
+### Personal Access Token（推荐）
+
+1. 在 Octopus Web 页面左下角用户菜单中，点击「Access Token」
+2. 创建一个 Token，复制生成的 `oct_pat_xxx` 值
 
 ```bash
 # 登录（同时全局安装 Skill）
+octo-cli login --token <YOUR_PERSONAL_ACCESS_TOKEN>
+
+# 或通过环境变量
+export OCTOPUS_TOKEN=<YOUR_PERSONAL_ACCESS_TOKEN>
+```
+
+### Application Key（已废弃，下个版本将移除）
+
+> **Deprecation Notice：** Application Key 认证方式将在下一个版本中移除，请尽快迁移到 Personal Access Token。
+
+```bash
 octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
 
-# 或通过环境变量（CI/CD、容器场景）
+# 或通过环境变量
 export OCTOPUS_APP_ID=<APP_ID>
 export OCTOPUS_APP_SECRET=<APP_SECRET>
 ```
@@ -331,8 +344,7 @@ npx octo-cli mcp-install
       "command": "npx",
       "args": ["-y", "octo-cli", "mcp"],
       "env": {
-        "OCTOPUS_APP_ID": "<your-app-id>",
-        "OCTOPUS_APP_SECRET": "<your-app-secret>"
+        "OCTOPUS_TOKEN": "<your-personal-access-token>"
       }
     }
   }
@@ -392,7 +404,7 @@ octo-cli 封装了 [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b68
 | 大盘 | `/v1/dashboards`（CRUD） |
 | 用户 | `/v1/users/search` |
 
-鉴权：OC-HMAC-SHA256-2 请求签名。默认地址：`https://octopus-app.zhenguanyu.com`。
+鉴权：支持 Personal Access Token（Bearer Token）和 Application Key（OC-HMAC-SHA256-2 签名）。默认地址：`https://octopus-app.zhenguanyu.com`。
 
 ## License
 
