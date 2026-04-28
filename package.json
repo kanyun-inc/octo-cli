@@ -1,6 +1,6 @@
 {
   "name": "octo-cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Octopus Observability CLI — query logs, alerts, traces, metrics and more",
   "type": "module",
   "main": "./dist/index.js",

@@ -8,6 +8,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const DEFAULT_BASE_URL = 'https://octopus-app.zhenguanyu.com';
 
 interface Config {
+  token?: string;
   app_id?: string;
   app_secret?: string;
   base_url?: string;
@@ -31,6 +32,10 @@ export function getBaseUrl(): string {
   return (
     process.env.OCTOPUS_BASE_URL ?? readConfig().base_url ?? DEFAULT_BASE_URL
   );
+}
+
+export function getToken(): string | undefined {
+  return process.env.OCTOPUS_TOKEN ?? readConfig().token;
 }
 
 export function getAppId(): string | undefined {
@@ -59,18 +64,32 @@ export function saveConfig(
   writeConfig(config);
 }
 
+export function saveToken(token: string, baseUrl?: string, env?: string): void {
+  const config = readConfig();
+  config.token = token;
+  delete config.app_id;
+  delete config.app_secret;
+  if (baseUrl) config.base_url = baseUrl;
+  if (env) config.env = env;
+  writeConfig(config);
+}
+
 export function getConfigPath(): string {
   return CONFIG_FILE;
 }
 
-export function getCredentials(): { appId: string; appSecret: string } {
+export function getCredentials(): { mode: 'token'; token: string } | { mode: 'appKey'; appId: string; appSecret: string } {
+  const token = getToken();
+  if (token) {
+    return { mode: 'token', token };
+  }
   const appId = getAppId();
   const appSecret = getAppSecret();
-  if (!appId || !appSecret) {
-    console.error(
-      'Error: Not configured. Run `octo login` or set OCTOPUS_APP_ID and OCTOPUS_APP_SECRET.'
-    );
-    process.exit(1);
+  if (appId && appSecret) {
+    return { mode: 'appKey', appId, appSecret };
   }
-  return { appId, appSecret };
+  console.error(
+    'Error: Not configured. Run `octo login --token <TOKEN>` or set OCTOPUS_TOKEN.'
+  );
+  process.exit(1);
 }

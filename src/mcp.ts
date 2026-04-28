@@ -5,8 +5,9 @@
  *   octo mcp
  *
  * Environment variables:
- *   OCTOPUS_APP_ID     — required
- *   OCTOPUS_APP_SECRET — required
+ *   OCTOPUS_TOKEN      — Personal Access Token (preferred)
+ *   OCTOPUS_APP_ID     — Application ID (legacy, requires OCTOPUS_APP_SECRET)
+ *   OCTOPUS_APP_SECRET — Application Secret (legacy, requires OCTOPUS_APP_ID)
  *   OCTOPUS_BASE_URL   — optional
  *   OCTOPUS_ENV        — optional, default "online"
  */
@@ -18,17 +19,11 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { OctoClient } from './client.js';
-import { getAppId, getAppSecret, getBaseUrl, getDefaultEnv } from './config.js';
+import { getBaseUrl, getCredentials, getDefaultEnv } from './config.js';
 
 function getClient(): OctoClient {
-  const appId = getAppId();
-  const appSecret = getAppSecret();
-  if (!appId || !appSecret) {
-    throw new Error(
-      'Credentials not set. Run `octo login` or set OCTOPUS_APP_ID / OCTOPUS_APP_SECRET.'
-    );
-  }
-  return new OctoClient(getBaseUrl(), appId, appSecret);
+  const credentials = getCredentials();
+  return new OctoClient(getBaseUrl(), credentials);
 }
 
 function ok(text: string) {
