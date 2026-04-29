@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { registerCommands } from './commands.js';
 
+declare const __PKG_VERSION__: string;
+
 const program = new Command();
 
 program
@@ -8,7 +10,7 @@ program
   .description(
     'Octopus Observability CLI — logs, alerts, traces, metrics and more'
   )
-  .version('0.6.0');
+  .version(__PKG_VERSION__);
 
 registerCommands(program);
 
