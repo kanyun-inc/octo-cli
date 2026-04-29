@@ -6,7 +6,6 @@ import {
   getConfigPath,
   getCredentials,
   getDefaultEnv,
-  getToken,
   saveConfig,
   saveToken,
 } from './config.js';
@@ -39,7 +38,9 @@ export function registerCommands(program: Command): void {
         saveConfig(opts.appId, opts.appSecret, opts.url, opts.env);
         console.log(`Credentials saved to ${getConfigPath()}`);
       } else {
-        console.error('Error: Provide --token <TOKEN> or both --app-id and --app-secret.');
+        console.error(
+          'Error: Provide --token <TOKEN> or both --app-id and --app-secret.'
+        );
         process.exit(1);
       }
 

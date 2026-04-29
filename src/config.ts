@@ -78,7 +78,9 @@ export function getConfigPath(): string {
   return CONFIG_FILE;
 }
 
-export function getCredentials(): { mode: 'token'; token: string } | { mode: 'appKey'; appId: string; appSecret: string } {
+export function getCredentials():
+  | { mode: 'token'; token: string }
+  | { mode: 'appKey'; appId: string; appSecret: string } {
   const token = getToken();
   if (token) {
     return { mode: 'token', token };
