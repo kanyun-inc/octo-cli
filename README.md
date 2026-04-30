@@ -406,21 +406,24 @@ octo-cli 封装了 [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b68
 
 鉴权：支持 Personal Access Token（Bearer Token）和 Application Key（OC-HMAC-SHA256-2 签名）。默认地址：`https://octopus-app.zhenguanyu.com`。
 
-## 贡献与发版
+## 贡献
 
-使用 [changesets](https://github.com/changesets/changesets) 管理版本号与 CHANGELOG。
-
-**提 PR 时**：
+见 [CONTRIBUTING.md](./CONTRIBUTING.md)。简要流程：
 
 ```bash
-pnpm changeset     # 选择 patch / minor / major，写 changelog 条目
+# 开分支
+git checkout -b feature-xxx
+
+# 写代码 + 测试
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
+
+# 加 changeset（漏了不会发版）
+pnpm changeset
+
+# 提 PR 即可
 ```
 
-生成的 `.changeset/*.md` 随 PR 一起提交。
-
-**合入 `main` 后**：GitHub Actions 会自动开一个 "chore: version packages" PR，聚合所有 changeset → bump 版本 → 写 CHANGELOG。合并该 PR 即自动发 npm。
-
-**beta 预发布**：在 `feature-*` 分支运行 `pnpm changeset pre enter beta` 进入 pre-release 模式，push 后自动发 `octo-cli@beta`。
+PR 合入 `main` 后，CI 会自动开一个 "chore: version packages" PR 聚合待发版的 changeset，合并该 PR 即自动 `npm publish`，无需手动打 tag。AI Agent 开发请参考 [CLAUDE.md](./CLAUDE.md)。
 
 ## License
 
