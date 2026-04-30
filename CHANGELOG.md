@@ -1,0 +1,13 @@
+# octo-cli
+
+## 0.7.1
+
+### Patch Changes
+
+- c73f056: 接入 changesets + GitHub Actions 自动发版流水线。
+
+  - `main` 分支合入后，changesets action 自动开 "chore: version packages" PR 聚合改动
+  - 合并 Version Packages PR 触发 `npm publish`，带 npm provenance
+  - `feature-*` 分支在 `.changeset/pre.json` tag 为 `beta` 时支持 beta 预发布
+  - 新增 `pnpm release` 脚本用于 CI 调用
+  - 新增 CI workflow 在 PR 上跑 typecheck / lint / test / build
