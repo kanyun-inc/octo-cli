@@ -37,6 +37,7 @@
     "test:watch": "vitest",
     "lint": "biome check",
     "lint:fix": "biome check --write",
+    "release": "pnpm build && changeset publish",
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
+    "@changesets/cli": "^2.31.0",
     "@types/node": "^22.15.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
