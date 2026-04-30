@@ -406,6 +406,25 @@ octo-cli 封装了 [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b68
 
 鉴权：支持 Personal Access Token（Bearer Token）和 Application Key（OC-HMAC-SHA256-2 签名）。默认地址：`https://octopus-app.zhenguanyu.com`。
 
+## 贡献
+
+见 [CONTRIBUTING.md](./CONTRIBUTING.md)。简要流程：
+
+```bash
+# 开分支
+git checkout -b feature-xxx
+
+# 写代码 + 测试
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
+
+# 加 changeset（漏了不会发版）
+pnpm changeset
+
+# 提 PR 即可
+```
+
+PR 合入 `main` 后，CI 会自动开一个 "chore: version packages" PR 聚合待发版的 changeset，合并该 PR 即自动 `npm publish`，无需手动打 tag。AI Agent 开发请参考 [CLAUDE.md](./CLAUDE.md)。
+
 ## License
 
 MIT
