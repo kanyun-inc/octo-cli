@@ -1,5 +1,14 @@
 # octo-cli
 
+## 0.7.2
+
+### Patch Changes
+
+- 53f632d: fix: init 命令支持个人 Access Token 认证
+
+  - init 凭据检查现在同时识别 config.token 和 OCTOPUS_TOKEN 环境变量
+  - 错误提示更新为推荐 `login --token` 方式
+
 ## 0.7.1
 
 ### Patch Changes
