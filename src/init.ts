@@ -258,8 +258,7 @@ export function runInit(targetDir?: string): void {
   let hasCredentials = false;
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    hasCredentials =
-      !!(config.app_id && config.app_secret) || !!config.token;
+    hasCredentials = !!(config.app_id && config.app_secret) || !!config.token;
   } catch {
     // no config file
   }
