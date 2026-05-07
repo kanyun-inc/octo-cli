@@ -258,20 +258,19 @@ export function runInit(targetDir?: string): void {
   let hasCredentials = false;
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    hasCredentials = !!(config.app_id && config.app_secret);
+    hasCredentials = !!(config.app_id && config.app_secret) || !!config.token;
   } catch {
     // no config file
   }
   hasCredentials =
     hasCredentials ||
-    !!(process.env.OCTOPUS_APP_ID && process.env.OCTOPUS_APP_SECRET);
+    !!(process.env.OCTOPUS_APP_ID && process.env.OCTOPUS_APP_SECRET) ||
+    !!process.env.OCTOPUS_TOKEN;
 
   if (!hasCredentials) {
     console.error('Error: Not logged in. Run this first:');
     console.error('');
-    console.error(
-      '  npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>'
-    );
+    console.error('  npx octo-cli login --token <TOKEN>');
     console.error('');
     console.error(
       'The init command needs Octopus API access so the agent can query'
