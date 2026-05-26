@@ -205,9 +205,9 @@ chore: bump dependencies
 
 lockfile 漂移了。本地 `pnpm install`，把 `pnpm-lock.yaml` 一起提交。
 
-### 发版 workflow 报 `NPM_TOKEN` 错误
+### 发版 workflow 报 npm 鉴权错误
 
-Maintainer 需要在仓库 Settings → Secrets → Actions 配 npm automation token。贡献者不用关心。
+本仓库走 npm Trusted Publishing（OIDC），不再依赖静态 token。Maintainer 需要在 npmjs.com 包页面 Settings → Trusted Publisher 里把 GitHub repo + workflow 文件名（`publish.yml`）配上。贡献者不用关心。
 
 ### 本地预览一下发版效果
 
