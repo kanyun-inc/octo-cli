@@ -33,6 +33,11 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
+      - name: Upgrade npm for Trusted Publishing
+        run: |
+          npm install -g npm@^11
+          npm --version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -55,8 +60,6 @@ jobs:
           commit: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
 
   beta-release:
     name: Beta Release
@@ -80,6 +83,11 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
+
+      - name: Upgrade npm for Trusted Publishing
+        run: |
+          npm install -g npm@^11
+          npm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -136,9 +144,6 @@ jobs:
       - name: Publish beta to npm
         if: steps.check-pre.outputs.is_pre == 'true' && steps.check-version.outputs.has_changes == 'true'
         run: pnpm changeset publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
 
       - name: Commit version bump back to branch
         if: steps.check-pre.outputs.is_pre == 'true' && steps.check-version.outputs.has_changes == 'true'

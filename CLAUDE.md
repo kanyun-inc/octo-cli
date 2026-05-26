@@ -112,5 +112,5 @@ pnpm changeset
 |------|------|------|
 | "No changesets found" | 忘了加 changeset | `pnpm changeset` 后提交新文件 |
 | `octo --version` 输出老版本号 | dist 没重新构建 | `pnpm build` |
-| CI publish 失败 | `NPM_TOKEN` secret 未配或过期 | 仓库 Settings → Secrets → Actions |
+| CI publish 失败 | npm Trusted Publisher 未配或 workflow 文件名不匹配 | npmjs.com 包页面 → Settings → Trusted Publisher 检查 GitHub repo 与 workflow 文件名（`publish.yml`） |
 | `pnpm install --frozen-lockfile` 失败 | 依赖变更没同步 lockfile | 本地 `pnpm install` 后提交 `pnpm-lock.yaml` |
