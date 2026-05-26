@@ -58,4 +58,14 @@ describe('resolveTimeRange', () => {
     expect(from).toBe(new Date('2024-01-01T00:00:00Z').getTime());
     expect(to).toBe(new Date('2024-01-01T01:00:00Z').getTime());
   });
+
+  it('--from/--to takes precedence over --last', () => {
+    const { from, to } = resolveTimeRange({
+      last: '1h',
+      from: '2024-06-01T00:00:00Z',
+      to: '2024-06-01T23:59:59Z',
+    });
+    expect(from).toBe(new Date('2024-06-01T00:00:00Z').getTime());
+    expect(to).toBe(new Date('2024-06-01T23:59:59Z').getTime());
+  });
 });

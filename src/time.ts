@@ -29,15 +29,15 @@ export function resolveTimeRange(opts: {
 }): { from: number; to: number } {
   const now = Date.now();
 
-  if (opts.last) {
-    const ms = parseDuration(opts.last);
-    return { from: now - ms, to: now };
-  }
-
   if (opts.from) {
     const from = parseTimestamp(opts.from);
     const to = opts.to ? parseTimestamp(opts.to) : now;
     return { from, to };
+  }
+
+  if (opts.last) {
+    const ms = parseDuration(opts.last);
+    return { from: now - ms, to: now };
   }
 
   // Default: last 15 minutes
