@@ -1,5 +1,11 @@
 import { generateAuthorizationHeader } from './auth.js';
 
+declare const __PKG_VERSION__: string;
+
+const PKG_VERSION =
+  typeof __PKG_VERSION__ === 'string' ? __PKG_VERSION__ : 'dev';
+const USER_AGENT = `octo-cli/${PKG_VERSION} (node ${process.version}; ${process.platform})`;
+
 interface ApiResponse<T = unknown> {
   code: number;
   data: T;
@@ -48,6 +54,7 @@ export class OctoClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: authorization,
+        'User-Agent': USER_AGENT,
       },
       body: payload || undefined,
     });
