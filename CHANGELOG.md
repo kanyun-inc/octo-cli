@@ -1,5 +1,11 @@
 # octo-cli
 
+## 0.7.5
+
+### Patch Changes
+
+- cf42e2d: OctoClient 所有请求带上 `User-Agent: octo-cli/<version> (node <ver>; <platform>)`，方便在网关日志里统计 CLI 调用量与版本分布。
+
 ## 0.7.4
 
 ### Patch Changes
