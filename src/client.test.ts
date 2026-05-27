@@ -3,12 +3,18 @@ import { OctoClient } from './client.js';
 
 // Intercept fetch to capture request details
 function captureFetch() {
-  const calls: { url: string; method: string; body: string }[] = [];
+  const calls: {
+    url: string;
+    method: string;
+    body: string;
+    headers: Record<string, string>;
+  }[] = [];
   const mockFetch = vi.fn(async (url: string, init: RequestInit) => {
     calls.push({
       url,
       method: init.method ?? 'GET',
       body: (init.body as string) ?? '',
+      headers: (init.headers as Record<string, string>) ?? {},
     });
     return new Response(JSON.stringify({ code: 0, data: null, message: 'ok' }));
   });
@@ -75,6 +81,17 @@ describe('OctoClient alert methods', () => {
     const body = JSON.parse(calls[0].body);
     expect(Array.isArray(body)).toBe(true);
     expect(body[0].name).toBe('test-rule');
+    vi.restoreAllMocks();
+  });
+
+  it('every request carries an octo-cli User-Agent', async () => {
+    const calls = captureFetch();
+    await client.alertRulesDelete(1);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers['User-Agent']).toMatch(
+      /^octo-cli\/[^ ]+ \(node v\d+\.\d+\.\d+; [a-z0-9]+\)$/
+    );
     vi.restoreAllMocks();
   });
 
