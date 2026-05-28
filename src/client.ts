@@ -173,6 +173,28 @@ export class OctoClient {
     );
   }
 
+  async alertDetail(alertId: number) {
+    return this.get(`/infra-octopus-openapi/v1/alerts/${alertId}`);
+  }
+
+  async alertTimeseries(params: {
+    alertId: number;
+    from: number;
+    to: number;
+    conditionId?: number;
+  }) {
+    const qs = new URLSearchParams({
+      from: String(params.from),
+      to: String(params.to),
+    });
+    if (params.conditionId != null) {
+      qs.set('conditionId', String(params.conditionId));
+    }
+    return this.get(
+      `/infra-octopus-openapi/v1/alerts/${params.alertId}/timeseries?${qs}`
+    );
+  }
+
   async alertSilenceDelete(ruleId: number) {
     return this.del(`/infra-octopus-openapi/v1/alerts/silences/${ruleId}`);
   }

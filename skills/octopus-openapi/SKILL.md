@@ -478,6 +478,20 @@ Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`�
 
 ### 7.6 删除静默 `DELETE /infra-octopus-openapi/v1/alerts/silences/{ruleId}`
 
+### 7.7 告警详情 `GET /infra-octopus-openapi/v1/alerts/{id}`
+
+返回告警基本信息、规则条件（含查询表达式和阈值）及触发维度组合。
+
+响应字段：`id`、`title`、`priority`、`status`、`env`、`scope`、`alertRuleType`、`activeTime`、`duration`、`tags`、`description`、`rule`（含 `id`、`name`、`conditionEvaluationType`、`conditions`）、`activeMergedGroup`。
+
+### 7.8 告警检测时序数据 `GET /infra-octopus-openapi/v1/alerts/{id}/timeseries`
+
+返回告警对应的检测时序数据（时间点、值、标签、条件状态），供分析告警触发趋势使用。
+
+Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`conditionId`（可选，默认 0）。
+
+响应字段：`labelList`（标签列表）、`times`（时间序列）、`values`（多条线的值）、`currentStatus`（当前条件状态）。
+
 ---
 
 ## 八、服务查询相关接口
