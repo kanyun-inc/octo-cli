@@ -284,6 +284,40 @@ export function registerCommands(program: Command): void {
     });
 
   alerts
+    .command('detail')
+    .description('Get alert detail')
+    .argument('<alertId>', 'Alert ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (alertId, opts) => {
+      const client = getClient();
+      const data = await client.alertDetail(Number.parseInt(alertId, 10));
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('timeseries')
+    .description('Get alert detection timeseries data')
+    .argument('<alertId>', 'Alert ID')
+    .option('--condition-id <id>', 'Condition ID (default 0)')
+    .option('-l, --last <duration>', 'Time range', '1h')
+    .option('--from <time>', 'Start time')
+    .option('--to <time>', 'End time')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (alertId, opts) => {
+      const client = getClient();
+      const { from, to } = resolveTimeRange(opts);
+      const data = await client.alertTimeseries({
+        alertId: Number.parseInt(alertId, 10),
+        from,
+        to,
+        conditionId: opts.conditionId
+          ? Number.parseInt(opts.conditionId, 10)
+          : undefined,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
     .command('unsilence')
     .description('Delete alert silence')
     .argument('<ruleId>', 'Alert rule ID')

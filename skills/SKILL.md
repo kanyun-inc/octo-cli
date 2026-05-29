@@ -219,6 +219,14 @@ npx octo-cli alerts search -s firing -l 1h                    # firing alerts
 npx octo-cli alerts search -s firing -p P0,P1 -l 6h           # P0/P1 only
 npx octo-cli alerts search --service myapp -s all -l 1d        # by service
 
+# Alert detail
+npx octo-cli alerts detail 12345                               # get alert detail
+
+# Alert timeseries (detection data)
+npx octo-cli alerts timeseries 12345 -l 1h                     # last 1h
+npx octo-cli alerts timeseries 12345 --from "2026-01-01T00:00:00" --to "2026-01-01T12:00:00"
+npx octo-cli alerts timeseries 12345 --condition-id 0 -l 2h    # specific condition
+
 # Alert rules
 npx octo-cli alerts rules --group-id -1                        # all rules
 npx octo-cli alerts rules --search "error" --page 1 --page-size 10

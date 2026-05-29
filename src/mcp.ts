@@ -256,6 +256,42 @@ export async function startMcpServer(): Promise<void> {
         },
       },
       {
+        name: 'octo_alerts_detail',
+        description:
+          'Get Octopus alert detail including rule conditions, trigger dimensions, and status.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            alertId: {
+              type: 'number',
+              description: 'Alert ID',
+            },
+          },
+          required: ['alertId'],
+        },
+      },
+      {
+        name: 'octo_alerts_timeseries',
+        description:
+          'Get Octopus alert detection timeseries data (time points, values, labels, condition status).',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            alertId: {
+              type: 'number',
+              description: 'Alert ID',
+            },
+            from: fromProp,
+            to: toProp,
+            conditionId: {
+              type: 'number',
+              description: 'Condition ID (default 0 for first condition)',
+            },
+          },
+          required: ['alertId'],
+        },
+      },
+      {
         name: 'octo_alerts_silence_create',
         description:
           'Create an alert silence (mute) in Octopus. Suppresses notifications for a rule during a time window.',
@@ -555,6 +591,22 @@ export async function startMcpServer(): Promise<void> {
           const ruleId = args.ruleId as number;
           await client.alertRulesDelete(ruleId);
           return ok(`Alert rule ${ruleId} deleted`);
+        }
+
+        case 'octo_alerts_detail': {
+          const data = await client.alertDetail(args.alertId as number);
+          return ok(JSON.stringify(data, null, 2));
+        }
+
+        case 'octo_alerts_timeseries': {
+          const { from, to } = timeDefaults(args);
+          const data = await client.alertTimeseries({
+            alertId: args.alertId as number,
+            from,
+            to,
+            conditionId: args.conditionId as number | undefined,
+          });
+          return ok(JSON.stringify(data, null, 2));
         }
 
         case 'octo_alerts_silence_create': {

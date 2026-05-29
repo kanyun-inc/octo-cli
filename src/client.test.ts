@@ -95,6 +95,50 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 
+  it('alertDetail uses GET with path parameter', async () => {
+    const calls = captureFetch();
+    await client.alertDetail(99);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alerts/99'
+    );
+    vi.restoreAllMocks();
+  });
+
+  it('alertTimeseries uses GET with query parameters', async () => {
+    const calls = captureFetch();
+    await client.alertTimeseries({
+      alertId: 42,
+      from: 1000,
+      to: 2000,
+      conditionId: 3,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alerts/42/timeseries?from=1000&to=2000&conditionId=3'
+    );
+    vi.restoreAllMocks();
+  });
+
+  it('alertTimeseries omits conditionId when not provided', async () => {
+    const calls = captureFetch();
+    await client.alertTimeseries({
+      alertId: 42,
+      from: 1000,
+      to: 2000,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alerts/42/timeseries?from=1000&to=2000'
+    );
+    vi.restoreAllMocks();
+  });
+
   it('alertSilenceCreate sends correct structure', async () => {
     const calls = captureFetch();
     await client.alertSilenceCreate({
