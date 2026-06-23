@@ -528,7 +528,7 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ### 用户列表 `POST /infra-octopus-openapi/v1/users/search`
 
-请求体示例：`{ "name": [] }`（用户名称列表）。响应含用户 `id`、`name` 等。
+请求体示例：`{ "names": [] }`（用户名称列表）。响应含用户 `id`、`name` 等。
 
 ---
 

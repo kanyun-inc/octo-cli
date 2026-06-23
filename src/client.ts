@@ -429,7 +429,7 @@ export class OctoClient {
 
   async usersSearch(names: string[]) {
     return this.post('/infra-octopus-openapi/v1/users/search', {
-      name: names,
+      names,
     });
   }
 }
