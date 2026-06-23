@@ -139,6 +139,21 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 
+  it('usersSearch sends names (plural) as field key', async () => {
+    const calls = captureFetch();
+    await client.usersSearch(['alice', 'bob']);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/users/search'
+    );
+    const body = JSON.parse(calls[0].body);
+    expect(body.names).toEqual(['alice', 'bob']);
+    expect(body.name).toBeUndefined();
+    vi.restoreAllMocks();
+  });
+
   it('alertSilenceCreate sends correct structure', async () => {
     const calls = captureFetch();
     await client.alertSilenceCreate({
