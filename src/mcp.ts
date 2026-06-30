@@ -49,15 +49,17 @@ const envProp = {
 };
 const fromProp = {
   type: 'number',
-  description: 'Start time in epoch ms',
+  description:
+    'Start time in epoch milliseconds. If omitted, the tool defaults to the last 15 minutes; for "last 1h", pass now-3600000.',
 };
 const toProp = {
   type: 'number',
-  description: 'End time in epoch ms',
+  description: 'End time in epoch milliseconds. If omitted, defaults to now.',
 };
 const queryProp = {
   type: 'string',
-  description: 'Query string (Octopus query syntax)',
+  description:
+    'Octopus search syntax, not Lucene/Elasticsearch. Field filters use `field = value`, `!=`, `>`, `>=`, `<`, `<=`, `in (...)`, `not in (...)`; do not use `field:value`. Values and field names are case-sensitive, operators AND/OR/NOT are case-insensitive. Use parentheses for grouping and double quotes for exact phrases. Wildcards only work in field search, e.g. `service = web*`. Common fields: service, level (FATAL/ERROR/WARN/INFO/DEBUG/TRACE), host, trace_id, issue_id, k8s.pod.name, source. Examples: `level = ERROR`, `service = octopus-query-proxy`, `service = myapp AND level = ERROR`, `(level = ERROR OR level = WARN) AND service = myapp`.',
 };
 
 function timeDefaults(args: Record<string, unknown>): {
