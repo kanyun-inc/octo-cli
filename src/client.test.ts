@@ -95,6 +95,69 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 
+  it('adds headers from OCTOPUS_EXTRA_HEADERS', async () => {
+    vi.stubEnv(
+      'OCTOPUS_EXTRA_HEADERS',
+      JSON.stringify({
+        'X-Octopus-Tenant': 'tenant-a',
+        'X-Request-Source': 'codex',
+      })
+    );
+    const calls = captureFetch();
+    await client.alertRulesDelete(1);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers['X-Octopus-Tenant']).toBe('tenant-a');
+    expect(calls[0].headers['X-Request-Source']).toBe('codex');
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps built-in headers when extra headers use different casing', async () => {
+    vi.stubEnv(
+      'OCTOPUS_EXTRA_HEADERS',
+      JSON.stringify({
+        authorization: 'Bearer invalid',
+        'content-type': 'text/plain',
+        'USER-AGENT': 'custom-agent',
+      })
+    );
+    const calls = captureFetch();
+    await client.alertRulesDelete(1);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers.Authorization).toMatch(/^OC-HMAC-SHA256/);
+    expect(calls[0].headers['Content-Type']).toBe('application/json');
+    expect(calls[0].headers['User-Agent']).toMatch(/^octo-cli\//);
+    expect(calls[0].headers.authorization).toBeUndefined();
+    expect(calls[0].headers['content-type']).toBeUndefined();
+    expect(calls[0].headers['USER-AGENT']).toBeUndefined();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('ignores empty OCTOPUS_EXTRA_HEADERS', async () => {
+    vi.stubEnv('OCTOPUS_EXTRA_HEADERS', '');
+    const calls = captureFetch();
+    await client.alertRulesDelete(1);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers.Authorization).toMatch(/^OC-HMAC-SHA256/);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('rejects invalid OCTOPUS_EXTRA_HEADERS', async () => {
+    vi.stubEnv('OCTOPUS_EXTRA_HEADERS', 'not-json');
+    captureFetch();
+
+    await expect(client.alertRulesDelete(1)).rejects.toThrow(
+      'OCTOPUS_EXTRA_HEADERS must be a valid JSON object'
+    );
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
   it('alertDetail uses GET with path parameter', async () => {
     const calls = captureFetch();
     await client.alertDetail(99);

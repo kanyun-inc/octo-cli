@@ -50,6 +50,26 @@ export function getDefaultEnv(): string {
   return process.env.OCTOPUS_ENV ?? readConfig().env ?? 'online';
 }
 
+export function getExtraHeaders(): Record<string, string> {
+  const raw = process.env.OCTOPUS_EXTRA_HEADERS;
+  if (!raw) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('OCTOPUS_EXTRA_HEADERS must be a valid JSON object');
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('OCTOPUS_EXTRA_HEADERS must be a JSON object');
+  }
+
+  return Object.fromEntries(
+    Object.entries(parsed).map(([key, value]) => [key, String(value)])
+  );
+}
+
 export function saveConfig(
   appId: string,
   appSecret: string,

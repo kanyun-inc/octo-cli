@@ -1,10 +1,30 @@
 import { generateAuthorizationHeader } from './auth.js';
+import { getExtraHeaders } from './config.js';
 
 declare const __PKG_VERSION__: string;
 
 const PKG_VERSION =
   typeof __PKG_VERSION__ === 'string' ? __PKG_VERSION__ : 'dev';
 const USER_AGENT = `octo-cli/${PKG_VERSION} (node ${process.version}; ${process.platform})`;
+
+function mergeHeaders(
+  extraHeaders: Record<string, string>,
+  builtInHeaders: Record<string, string>
+): Record<string, string> {
+  const builtInHeaderNames = new Set(
+    Object.keys(builtInHeaders).map((key) => key.toLowerCase())
+  );
+  const safeExtraHeaders = Object.fromEntries(
+    Object.entries(extraHeaders).filter(
+      ([key]) => !builtInHeaderNames.has(key.toLowerCase())
+    )
+  );
+
+  return {
+    ...safeExtraHeaders,
+    ...builtInHeaders,
+  };
+}
 
 interface ApiResponse<T = unknown> {
   code: number;
@@ -49,13 +69,15 @@ export class OctoClient {
       );
     }
 
+    const headers = mergeHeaders(getExtraHeaders(), {
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+      'User-Agent': USER_AGENT,
+    });
+
     const res = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authorization,
-        'User-Agent': USER_AGENT,
-      },
+      headers,
       body: payload || undefined,
     });
 
