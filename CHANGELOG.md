@@ -1,5 +1,15 @@
 # octo-cli
 
+## 0.8.2
+
+### Patch Changes
+
+- 1fa67d6: 支持通过 `OCTOPUS_EXTRA_HEADERS` 为所有 Octopus OpenAPI 请求附加自定义 Header。
+
+  - `OCTOPUS_EXTRA_HEADERS` 接收 JSON 对象字符串，例如 `{"X-Octopus-Tenant":"tenant-a"}`
+  - CLI 和 MCP 模式都会生效，因为二者最终都走同一个 `OctoClient`
+  - 内置的 `Content-Type`、`Authorization`、`User-Agent` 保持优先，避免被自定义 Header 覆盖
+
 ## 0.8.1
 
 ### Patch Changes
