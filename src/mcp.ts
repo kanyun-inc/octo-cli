@@ -54,8 +54,7 @@ const fromProp = {
 };
 const toProp = {
   type: 'number',
-  description:
-    'End time in epoch milliseconds. If omitted, defaults to now.',
+  description: 'End time in epoch milliseconds. If omitted, defaults to now.',
 };
 const queryProp = {
   type: 'string',
