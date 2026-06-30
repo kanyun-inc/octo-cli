@@ -153,6 +153,9 @@ octo-cli login --token <YOUR_PERSONAL_ACCESS_TOKEN>
 
 # 或通过环境变量
 export OCTOPUS_TOKEN=<YOUR_PERSONAL_ACCESS_TOKEN>
+
+# 可选：为所有 OpenAPI 请求附加自定义 Header（JSON 对象）
+export OCTOPUS_EXTRA_HEADERS='{"X-Octopus-Tenant":"tenant-a"}'
 ```
 
 ### Application Key（已废弃，下个版本将移除）

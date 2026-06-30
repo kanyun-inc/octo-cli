@@ -1,4 +1,5 @@
 import { generateAuthorizationHeader } from './auth.js';
+import { getExtraHeaders } from './config.js';
 
 declare const __PKG_VERSION__: string;
 
@@ -52,6 +53,7 @@ export class OctoClient {
     const res = await fetch(url, {
       method,
       headers: {
+        ...getExtraHeaders(),
         'Content-Type': 'application/json',
         Authorization: authorization,
         'User-Agent': USER_AGENT,

@@ -95,6 +95,27 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 
+  it('merges OCTOPUS_EXTRA_HEADERS into requests without overriding built-ins', async () => {
+    vi.stubEnv(
+      'OCTOPUS_EXTRA_HEADERS',
+      JSON.stringify({
+        'X-Octopus-Tenant': 'tenant-a',
+        'X-Numeric': 123,
+        Authorization: 'Bearer should-not-win',
+      })
+    );
+    const calls = captureFetch();
+    await client.alertRulesDelete(1);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers['X-Octopus-Tenant']).toBe('tenant-a');
+    expect(calls[0].headers['X-Numeric']).toBe('123');
+    expect(calls[0].headers.Authorization).not.toBe('Bearer should-not-win');
+    expect(calls[0].headers['Content-Type']).toBe('application/json');
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
   it('alertDetail uses GET with path parameter', async () => {
     const calls = captureFetch();
     await client.alertDetail(99);
