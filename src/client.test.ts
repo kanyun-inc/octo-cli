@@ -236,3 +236,214 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('OctoClient case methods', () => {
+  const client = new OctoClient('https://example.com', {
+    mode: 'appKey',
+    appId: 'testId',
+    appSecret: 'testSecret',
+  });
+
+  it('casesList posts filter and pagination fields', async () => {
+    const calls = captureFetch();
+    await client.casesList({
+      pageNo: 2,
+      pageSize: 10,
+      groupId: 3,
+      status: 'todo',
+      priority: 'P1',
+      assignerId: 5,
+      input: 'payment',
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/list'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      pageNo: 2,
+      pageSize: 10,
+      groupId: 3,
+      status: 'todo',
+      priority: 'P1',
+      assignerId: 5,
+      input: 'payment',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('caseCreate posts a case payload', async () => {
+    const calls = captureFetch();
+    await client.caseCreate({
+      name: 'checkout incident',
+      groupId: 1,
+      priority: 'P0',
+      status: 'doing',
+      assignerId: 2,
+      description: 'investigate checkout failures',
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      name: 'checkout incident',
+      groupId: 1,
+      priority: 'P0',
+      status: 'doing',
+      assignerId: 2,
+      description: 'investigate checkout failures',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('caseDetail uses POST with path parameter', async () => {
+    const calls = captureFetch();
+    await client.caseDetail(99);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/99'
+    );
+    expect(calls[0].body).toBe('');
+    vi.restoreAllMocks();
+  });
+
+  it('caseDetailByKey uses POST with case key path parameter', async () => {
+    const calls = captureFetch();
+    await client.caseDetailByKey('CASE-10001');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/key/CASE-10001'
+    );
+    expect(calls[0].body).toBe('');
+    vi.restoreAllMocks();
+  });
+
+  it('caseUpdate uses PUT with editable fields', async () => {
+    const calls = captureFetch();
+    await client.caseUpdate(8, {
+      groupId: 1,
+      priority: 'P2',
+      status: 'done',
+      assignerId: 2,
+      description: 'fixed',
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/8'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      groupId: 1,
+      priority: 'P2',
+      status: 'done',
+      assignerId: 2,
+      description: 'fixed',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('caseDelete uses DELETE with path parameter', async () => {
+    const calls = captureFetch();
+    await client.caseDelete(8);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('DELETE');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/8'
+    );
+    expect(calls[0].body).toBe('');
+    vi.restoreAllMocks();
+  });
+
+  it('caseAddRelation posts relation type and target id', async () => {
+    const calls = captureFetch();
+    await client.caseAddRelation(8, {
+      type: 'alert',
+      targetId: '12345',
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/8/relation'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      type: 'alert',
+      targetId: '12345',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('caseDeleteRelation uses DELETE with relation path parameter', async () => {
+    const calls = captureFetch();
+    await client.caseDeleteRelation(8, 9);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('DELETE');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/8/relation/9'
+    );
+    vi.restoreAllMocks();
+  });
+
+  it('caseAddNote serializes note text as a JSON string', async () => {
+    const calls = captureFetch();
+    await client.caseAddNote(8, 'first note');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/8/note'
+    );
+    expect(calls[0].body).toBe('"first note"');
+    vi.restoreAllMocks();
+  });
+
+  it('caseUpdateNote serializes note text as a JSON string', async () => {
+    const calls = captureFetch();
+    await client.caseUpdateNote(8, 10, 'updated note');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/8/note/10'
+    );
+    expect(calls[0].body).toBe('"updated note"');
+    vi.restoreAllMocks();
+  });
+
+  it('caseGroupsAll uses GET', async () => {
+    const calls = captureFetch();
+    await client.caseGroupsAll();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/groups/all'
+    );
+    expect(calls[0].body).toBe('');
+    vi.restoreAllMocks();
+  });
+
+  it('caseGroupCreate posts group name', async () => {
+    const calls = captureFetch();
+    await client.caseGroupCreate({ name: 'incident cases' });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/cases/groups'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({ name: 'incident cases' });
+    vi.restoreAllMocks();
+  });
+});

@@ -268,6 +268,91 @@ export class OctoClient {
     );
   }
 
+  // --- Cases ---
+
+  async casesList(params: {
+    pageNo: number;
+    pageSize: number;
+    groupId?: number;
+    status?: string;
+    priority?: string;
+    assignerId?: number;
+    input?: string;
+  }) {
+    return this.post('/infra-octopus-openapi/v1/cases/list', params);
+  }
+
+  async caseCreate(params: {
+    name: string;
+    groupId: number;
+    priority?: string;
+    status?: string;
+    assignerId?: number;
+    description?: string;
+  }) {
+    return this.post('/infra-octopus-openapi/v1/cases', params);
+  }
+
+  async caseDetail(id: number) {
+    return this.post(`/infra-octopus-openapi/v1/cases/${id}`, null);
+  }
+
+  async caseDetailByKey(caseKey: string) {
+    return this.post(`/infra-octopus-openapi/v1/cases/key/${caseKey}`, null);
+  }
+
+  async caseUpdate(
+    id: number,
+    params: {
+      groupId?: number;
+      priority?: string;
+      status?: string;
+      assignerId?: number;
+      description?: string;
+    }
+  ) {
+    return this.put(`/infra-octopus-openapi/v1/cases/${id}`, params);
+  }
+
+  async caseDelete(id: number) {
+    return this.del(`/infra-octopus-openapi/v1/cases/${id}`);
+  }
+
+  async caseAddRelation(
+    id: number,
+    params: {
+      type: string;
+      targetId: string;
+    }
+  ) {
+    return this.post(`/infra-octopus-openapi/v1/cases/${id}/relation`, params);
+  }
+
+  async caseDeleteRelation(id: number, relationId: number) {
+    return this.del(
+      `/infra-octopus-openapi/v1/cases/${id}/relation/${relationId}`
+    );
+  }
+
+  async caseAddNote(id: number, note: string) {
+    return this.post(`/infra-octopus-openapi/v1/cases/${id}/note`, note);
+  }
+
+  async caseUpdateNote(id: number, noteId: number, note: string) {
+    return this.put(
+      `/infra-octopus-openapi/v1/cases/${id}/note/${noteId}`,
+      note
+    );
+  }
+
+  async caseGroupsAll() {
+    return this.get('/infra-octopus-openapi/v1/cases/groups/all');
+  }
+
+  async caseGroupCreate(params: { name: string }) {
+    return this.post('/infra-octopus-openapi/v1/cases/groups', params);
+  }
+
   // --- Trace ---
 
   async traceSpanList(params: {
@@ -441,10 +526,6 @@ export class OctoClient {
 
   async dashboardUpdate(id: number, data: unknown) {
     return this.put(`/infra-octopus-openapi/v1/dashboards/${id}`, data);
-  }
-
-  async dashboardDelete(id: number) {
-    return this.del(`/infra-octopus-openapi/v1/dashboards/${id}`);
   }
 
   // --- Users ---

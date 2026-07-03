@@ -61,6 +61,21 @@ const queryProp = {
   description:
     'Octopus search syntax, not Lucene/Elasticsearch. Field filters use `field = value`, `!=`, `>`, `>=`, `<`, `<=`, `in (...)`, `not in (...)`; do not use `field:value`. Values and field names are case-sensitive, operators AND/OR/NOT are case-insensitive. Use parentheses for grouping and double quotes for exact phrases. Wildcards only work in field search, e.g. `service = web*`. Common fields: service, level (FATAL/ERROR/WARN/INFO/DEBUG/TRACE), host, trace_id, issue_id, k8s.pod.name, source. Examples: `level = ERROR`, `service = octopus-query-proxy`, `service = myapp AND level = ERROR`, `(level = ERROR OR level = WARN) AND service = myapp`.',
 };
+const caseStatusProp = {
+  type: 'string',
+  description: 'Case status: todo, doing, or done',
+  enum: ['todo', 'doing', 'done'],
+};
+const casePriorityProp = {
+  type: 'string',
+  description: 'Case priority: NONE, P0, P1, or P2',
+  enum: ['NONE', 'P0', 'P1', 'P2'],
+};
+const caseRelationTypeProp = {
+  type: 'string',
+  description: 'Case relation type: alert or issue',
+  enum: ['alert', 'issue'],
+};
 
 function timeDefaults(args: Record<string, unknown>): {
   env: string;
@@ -75,6 +90,1171 @@ function timeDefaults(args: Record<string, unknown>): {
   };
 }
 
+function parsePointInTime(value: unknown): number {
+  if (value == null) return Date.now();
+  if (typeof value === 'number') return value;
+
+  const text = String(value);
+  if (/^\d+$/.test(text)) return Number(text);
+
+  return new Date(text).getTime();
+}
+
+export function getMcpTools() {
+  return [
+    {
+      name: 'octo_logs_search',
+      description:
+        'Search Octopus logs. Returns log entries with message, level, attributes, traceId.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          limit: {
+            type: 'number',
+            description: 'Max results (default 50, max 500)',
+          },
+          order: {
+            type: 'string',
+            description: 'asc or desc',
+            enum: ['asc', 'desc'],
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_logs_aggregate',
+      description:
+        'Aggregate Octopus logs — count, avg, max, min, sum, percentile, grouped by fields.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          aggregation_field: {
+            type: 'string',
+            description: 'Field to aggregate (use "*" for count)',
+          },
+          aggregation_op: {
+            type: 'string',
+            description: 'Operation: count, sum, avg, max, min, p50, p95, p99',
+          },
+          group_by: {
+            type: 'string',
+            description: 'Field to group by (e.g. "service", "level")',
+          },
+          group_limit: {
+            type: 'number',
+            description: 'Max groups (default 10)',
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_alerts_search',
+      description:
+        'Search Octopus alerts. Filter by status (firing/resolved), priority (P0/P1/P2), services.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          status: {
+            type: 'string',
+            description: 'all, firing, or resolved',
+            enum: ['all', 'firing', 'resolved'],
+          },
+          priorities: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Priority filter, e.g. ["P0","P1"]',
+          },
+          services: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Service name filter',
+          },
+          limit: { type: 'number', description: 'Max results' },
+          groupId: {
+            type: 'number',
+            description: 'Alert rule group ID',
+          },
+          ruleIds: {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'Filter by specific alert rule IDs',
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_alerts_rules_search',
+      description:
+        'Search Octopus alert rules. Filter by group, env, priority, status, type, tags, creator.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          groupId: {
+            type: 'number',
+            description: 'Alert rule group ID (-1 for all groups)',
+          },
+          env: envProp,
+          priority: {
+            type: 'string',
+            description: 'Priority filter: P0, P1, P2',
+          },
+          statusList: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Status filter: enabled, disabled, paused, silenced',
+          },
+          searchInput: {
+            type: 'string',
+            description: 'Search keyword for rule name',
+          },
+          types: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Rule type filter: log, metric, issue, rum, llm',
+          },
+          service: { type: 'string', description: 'Service name filter' },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Tag filter',
+          },
+          creator: { type: 'string', description: 'Creator name filter' },
+          pageNo: { type: 'number', description: 'Page number (default 1)' },
+          pageSize: {
+            type: 'number',
+            description: 'Page size (default 20)',
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_alerts_rules_create',
+      description:
+        'Create Octopus alert rules. Accepts an array of rule objects. ' +
+        'Each rule needs: name, env, groupId, ruleType (log/metric/issue/rum/llm), ' +
+        'priority (P0/P1/P2/UNKNOWN), conditionEvaluationType (single/and/or), ' +
+        'conditions (array with period, comparison, threshold, alertQueryInfo), ' +
+        'notice (receivers, repeatNoticeInterval, effectiveWeeks, etc.), tags, active. ' +
+        'Tip: use octo_alerts_rules_search to find existing rules as payload templates.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          rules: {
+            type: 'array',
+            items: { type: 'object' },
+            description:
+              'Array of alert rule objects (AlertRuleCreateVO). See tool description for required fields.',
+          },
+        },
+        required: ['rules'],
+      },
+    },
+    {
+      name: 'octo_alerts_rules_delete',
+      description: 'Delete an Octopus alert rule by ID.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: {
+            type: 'number',
+            description: 'Alert rule ID to delete',
+          },
+        },
+        required: ['ruleId'],
+      },
+    },
+    {
+      name: 'octo_alerts_detail',
+      description:
+        'Get Octopus alert detail including rule conditions, trigger dimensions, and status.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          alertId: {
+            type: 'number',
+            description: 'Alert ID',
+          },
+        },
+        required: ['alertId'],
+      },
+    },
+    {
+      name: 'octo_alerts_timeseries',
+      description:
+        'Get Octopus alert detection timeseries data (time points, values, labels, condition status).',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          alertId: {
+            type: 'number',
+            description: 'Alert ID',
+          },
+          from: fromProp,
+          to: toProp,
+          conditionId: {
+            type: 'number',
+            description: 'Condition ID (default 0 for first condition)',
+          },
+        },
+        required: ['alertId'],
+      },
+    },
+    {
+      name: 'octo_alerts_silence_create',
+      description:
+        'Create an alert silence (mute) in Octopus. Suppresses notifications for a rule during a time window.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: {
+            type: 'number',
+            description: 'Alert rule ID to silence',
+          },
+          alertId: {
+            type: 'number',
+            description: 'Specific alert ID to silence',
+          },
+          durationMinutes: {
+            type: 'number',
+            description:
+              'Silence duration in minutes (e.g. 120 for 2 hours). Alternative to endTime.',
+          },
+          startTime: {
+            type: 'number',
+            description: 'Silence start time in epoch ms (default: now)',
+          },
+          endTime: {
+            type: 'number',
+            description:
+              'Silence end time in epoch ms. Required if durationMinutes is not set.',
+          },
+          scope: {
+            type: 'string',
+            description: 'Silence scope',
+            enum: ['ALL', 'SPECIFY'],
+          },
+          specifyGroups: {
+            type: 'object',
+            description:
+              'When scope=specify, map of group field to values array',
+          },
+          silentlyNotify: {
+            type: 'boolean',
+            description: 'Whether to send notification about the silence',
+          },
+        },
+        required: ['ruleId', 'alertId'],
+      },
+    },
+    {
+      name: 'octo_alerts_silence_delete',
+      description: 'Delete (cancel) an alert silence in Octopus.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: {
+            type: 'number',
+            description: 'Alert rule ID whose silence to remove',
+          },
+        },
+        required: ['ruleId'],
+      },
+    },
+    {
+      name: 'octo_issues_search',
+      description:
+        'Search Octopus error tracking issues. Returns error type, count, service, status.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          status: {
+            type: 'string',
+            description: 'unresolved, resolved, ignored, or all',
+            enum: ['unresolved', 'resolved', 'ignored', 'all'],
+          },
+          sort_type: {
+            type: 'string',
+            description: 'logCount or firstSeen',
+            enum: ['logCount', 'firstSeen'],
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_issues_detail',
+      description: 'Get Octopus error tracking issue detail by issue ID.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          issueId: { type: 'string', description: 'Issue ID' },
+        },
+        required: ['issueId'],
+      },
+    },
+    {
+      name: 'octo_issues_assign',
+      description: 'Batch assign Octopus error tracking issues to a user.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          userId: { type: 'number', description: 'Assignee user ID' },
+          issueIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Issue IDs to assign',
+          },
+          dataSource: {
+            type: 'string',
+            description: 'Data source: log or rum (default log)',
+          },
+        },
+        required: ['userId', 'issueIds'],
+      },
+    },
+    {
+      name: 'octo_issues_update',
+      description: 'Batch update Octopus error tracking issue status.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          issueIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Issue IDs to update',
+          },
+          status: {
+            type: 'string',
+            description: 'unresolved, resolved, or ignored',
+            enum: ['unresolved', 'resolved', 'ignored'],
+          },
+          env: envProp,
+          dataSource: {
+            type: 'string',
+            description: 'Data source: log or rum (default log)',
+          },
+        },
+        required: ['issueIds', 'status'],
+      },
+    },
+    {
+      name: 'octo_cases_list',
+      description:
+        'List Octopus cases. Filter by group, status, priority, assignee, or case name input.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          groupId: { type: 'number', description: 'Case group ID' },
+          status: caseStatusProp,
+          priority: casePriorityProp,
+          assignerId: { type: 'number', description: 'Assignee user ID' },
+          input: { type: 'string', description: 'Search by case name' },
+          pageNo: { type: 'number', description: 'Page number (default 1)' },
+          pageSize: {
+            type: 'number',
+            description: 'Page size (default 20, max 1000)',
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_cases_create',
+      description: 'Create an Octopus case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string', description: 'Case name' },
+          groupId: { type: 'number', description: 'Case group ID' },
+          priority: casePriorityProp,
+          status: caseStatusProp,
+          assignerId: { type: 'number', description: 'Assignee user ID' },
+          description: { type: 'string', description: 'Case description' },
+        },
+        required: ['name', 'groupId'],
+      },
+    },
+    {
+      name: 'octo_cases_detail',
+      description:
+        'Get Octopus case detail by numeric ID, including relations and timeline.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'octo_cases_detail_by_key',
+      description:
+        'Get Octopus case detail by CaseKey, including relations and timeline.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          caseKey: { type: 'string', description: 'Case key' },
+        },
+        required: ['caseKey'],
+      },
+    },
+    {
+      name: 'octo_cases_update',
+      description: 'Update editable fields on an Octopus case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+          groupId: { type: 'number', description: 'Case group ID' },
+          priority: casePriorityProp,
+          status: caseStatusProp,
+          assignerId: { type: 'number', description: 'Assignee user ID' },
+          description: { type: 'string', description: 'Case description' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'octo_cases_delete',
+      description: 'Delete an Octopus case by ID.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'octo_cases_link',
+      description: 'Link an alert or issue to an Octopus case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+          type: caseRelationTypeProp,
+          targetId: {
+            type: 'string',
+            description:
+              'Alert ID when type=alert, or Issue ID when type=issue',
+          },
+        },
+        required: ['id', 'type', 'targetId'],
+      },
+    },
+    {
+      name: 'octo_cases_unlink',
+      description: 'Remove a relation from an Octopus case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+          relationId: { type: 'number', description: 'Relation ID' },
+        },
+        required: ['id', 'relationId'],
+      },
+    },
+    {
+      name: 'octo_cases_note_add',
+      description: 'Add a note to an Octopus case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+          text: { type: 'string', description: 'Note text' },
+        },
+        required: ['id', 'text'],
+      },
+    },
+    {
+      name: 'octo_cases_note_update',
+      description: 'Update a note on an Octopus case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Case ID' },
+          noteId: { type: 'number', description: 'Note ID' },
+          text: { type: 'string', description: 'Note text' },
+        },
+        required: ['id', 'noteId', 'text'],
+      },
+    },
+    {
+      name: 'octo_cases_groups_all',
+      description: 'List all Octopus case groups.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {},
+      },
+    },
+    {
+      name: 'octo_cases_group_create',
+      description: 'Create an Octopus case group.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string', description: 'Case group name' },
+        },
+        required: ['name'],
+      },
+    },
+    {
+      name: 'octo_trace_search',
+      description:
+        'Search Octopus trace spans. Returns span name, service, duration, status, traceId.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          limit: { type: 'number', description: 'Max results (max 500)' },
+          order: {
+            type: 'string',
+            enum: ['asc', 'desc'],
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_trace_aggregate',
+      description:
+        'Aggregate Octopus trace spans — count, avg, max, min, sum, percentile, grouped by fields.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          aggregation_field: {
+            type: 'string',
+            description: 'Field to aggregate (use "*" for count)',
+          },
+          aggregation_op: {
+            type: 'string',
+            description: 'Operation: count, sum, avg, max, min, p50, p95, p99',
+          },
+          group_by: {
+            type: 'string',
+            description: 'Field to group by (e.g. "service", "operation")',
+          },
+          group_limit: {
+            type: 'number',
+            description: 'Max groups (default 10)',
+          },
+        },
+      },
+    },
+    {
+      name: 'octo_metrics_query',
+      description:
+        'Query Octopus metrics timeseries. Use metric query syntax like "sum(metric_name{tag=value}.as_count)".',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          queries: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Metric query strings, e.g. ["sum(http_requests{service=myapp}.as_count)"]',
+          },
+          point_count: {
+            type: 'number',
+            description: 'Number of data points (default 150)',
+          },
+        },
+        required: ['queries'],
+      },
+    },
+    {
+      name: 'octo_metrics_point',
+      description:
+        'Query Octopus metrics at one point in time. Use metric query syntax like "sum(metric_name{tag=value}.as_count)".',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          at: {
+            type: ['number', 'string'],
+            description:
+              'Point-in-time as epoch milliseconds or ISO string. Defaults to now.',
+          },
+          queries: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Metric query strings, e.g. ["sum(http_requests{service=myapp}.as_count)"]',
+          },
+        },
+        required: ['queries'],
+      },
+    },
+    {
+      name: 'octo_services_list',
+      description: 'List Octopus APM services.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+        },
+      },
+    },
+    {
+      name: 'octo_services_entries',
+      description: 'List Octopus APM service entries for a service.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          service: {
+            type: 'string',
+            description: 'Service name',
+          },
+        },
+        required: ['service'],
+      },
+    },
+    {
+      name: 'octo_services_topology',
+      description:
+        'Get service call topology graph — upstream/downstream services and edges.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          service: {
+            type: 'string',
+            description: 'Service name',
+          },
+        },
+        required: ['service'],
+      },
+    },
+    {
+      name: 'octo_llm_list',
+      description:
+        'Query Octopus LLM observability spans — model, tokens, cost, duration.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          limit: { type: 'number', description: 'Page size' },
+        },
+      },
+    },
+    {
+      name: 'octo_rum_list',
+      description:
+        'Query Octopus RUM (Real User Monitoring) events — sessions, views, actions, errors.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          limit: { type: 'number', description: 'Page size' },
+        },
+      },
+    },
+    {
+      name: 'octo_rum_detail',
+      description: 'Get Octopus RUM event detail by event ID.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'string', description: 'RUM event ID' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'octo_events_list',
+      description:
+        'Query Octopus events — deployments, config changes, incidents.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          limit: { type: 'number', description: 'Page size' },
+        },
+      },
+    },
+    {
+      name: 'octo_users_search',
+      description: 'Search Octopus users by names.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          names: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'User names to search',
+          },
+        },
+        required: ['names'],
+      },
+    },
+  ];
+}
+
+export async function handleMcpTool(
+  name: string,
+  args: Record<string, unknown>,
+  client: OctoClient = getClient()
+) {
+  try {
+    switch (name) {
+      case 'octo_logs_search': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.logsSearch({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          limit: args.limit as number | undefined,
+          order: args.order as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_logs_aggregate': {
+        const { env, from, to } = timeDefaults(args);
+        const aggField = String(args.aggregation_field ?? '*');
+        const aggOp = String(args.aggregation_op ?? 'count');
+        const groupBy = args.group_by as string | undefined;
+        const groupLimit = Number(args.group_limit ?? 10);
+
+        const data = await client.logsAggregate({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          aggregationFields: [{ field: aggField, operation: aggOp }],
+          groupFields: groupBy
+            ? [
+                {
+                  field: groupBy,
+                  limit: groupLimit,
+                  sort: { field: aggField, operation: aggOp, order: 'desc' },
+                },
+              ]
+            : undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_search': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.alertsSearch({
+          from,
+          to,
+          env,
+          status: (args.status as string) ?? 'all',
+          priorities: args.priorities as string[] | undefined,
+          services: args.services as string[] | undefined,
+          limit: args.limit as number | undefined,
+          groupId: args.groupId as number | undefined,
+          ruleIds: args.ruleIds as number[] | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rules_search': {
+        const data = await client.alertRulesSearch({
+          groupId: (args.groupId as number) ?? -1,
+          env: args.env as string | undefined,
+          priority: args.priority as string | undefined,
+          statusList: args.statusList as string[] | undefined,
+          searchInput: args.searchInput as string | undefined,
+          types: args.types as string[] | undefined,
+          service: args.service as string | undefined,
+          tags: args.tags as string[] | undefined,
+          creator: args.creator as string | undefined,
+          pageParam: {
+            pageNo: (args.pageNo as number) ?? 1,
+            pageSize: (args.pageSize as number) ?? 20,
+          },
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rules_create': {
+        const rules = args.rules as unknown[];
+        if (!Array.isArray(rules) || rules.length === 0) {
+          return fail('rules must be a non-empty array');
+        }
+        const data = await client.alertRulesCreate(rules);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rules_delete': {
+        const ruleId = args.ruleId as number;
+        await client.alertRulesDelete(ruleId);
+        return ok(`Alert rule ${ruleId} deleted`);
+      }
+
+      case 'octo_alerts_detail': {
+        const data = await client.alertDetail(args.alertId as number);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_timeseries': {
+        const { from, to } = timeDefaults(args);
+        const data = await client.alertTimeseries({
+          alertId: args.alertId as number,
+          from,
+          to,
+          conditionId: args.conditionId as number | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_silence_create': {
+        const now = Date.now();
+        const startTime = (args.startTime as number) ?? now;
+        let endTime = args.endTime as number | undefined;
+        if (!endTime && args.durationMinutes) {
+          endTime = startTime + (args.durationMinutes as number) * 60_000;
+        }
+        if (!endTime) {
+          return fail('Either endTime or durationMinutes is required');
+        }
+        const data = await client.alertSilenceCreate({
+          ruleId: args.ruleId as number,
+          alertId: args.alertId as number,
+          startTime,
+          endTime,
+          scope: (args.scope as string) ?? 'ALL',
+          specifyGroups: args.specifyGroups as
+            | Record<string, string[]>
+            | undefined,
+          silentlyNotify: (args.silentlyNotify as boolean) ?? false,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_silence_delete': {
+        const ruleId = args.ruleId as number;
+        await client.alertSilenceDelete(ruleId);
+        return ok(`Silence for rule ${ruleId} deleted`);
+      }
+
+      case 'octo_issues_search': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.issuesSearch({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          status: (args.status as string) ?? 'unresolved',
+          sortType: (args.sort_type as string) ?? 'logCount',
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_detail': {
+        const data = await client.issueDetail(String(args.issueId));
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_assign': {
+        await client.issuesBatchAssign({
+          assigneeId: args.userId as number,
+          dataSource: (args.dataSource as string) ?? 'log',
+          issueIds: args.issueIds as string[],
+        });
+        return ok('Issues assigned');
+      }
+
+      case 'octo_issues_update': {
+        await client.issuesBatchUpdate({
+          dataSource: (args.dataSource as string) ?? 'log',
+          env: String(args.env ?? getDefaultEnv()),
+          issueIds: args.issueIds as string[],
+          status: String(args.status),
+        });
+        return ok('Issues updated');
+      }
+
+      case 'octo_cases_list': {
+        const data = await client.casesList({
+          pageNo: (args.pageNo as number) ?? 1,
+          pageSize: (args.pageSize as number) ?? 20,
+          groupId: args.groupId as number | undefined,
+          status: args.status as string | undefined,
+          priority: args.priority as string | undefined,
+          assignerId: args.assignerId as number | undefined,
+          input: args.input as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_cases_create': {
+        const data = await client.caseCreate({
+          name: String(args.name),
+          groupId: args.groupId as number,
+          priority: args.priority as string | undefined,
+          status: args.status as string | undefined,
+          assignerId: args.assignerId as number | undefined,
+          description: args.description as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_cases_detail': {
+        const data = await client.caseDetail(args.id as number);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_cases_detail_by_key': {
+        const data = await client.caseDetailByKey(String(args.caseKey));
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_cases_update': {
+        const id = args.id as number;
+        await client.caseUpdate(id, {
+          groupId: args.groupId as number | undefined,
+          priority: args.priority as string | undefined,
+          status: args.status as string | undefined,
+          assignerId: args.assignerId as number | undefined,
+          description: args.description as string | undefined,
+        });
+        return ok(`Case ${id} updated`);
+      }
+
+      case 'octo_cases_delete': {
+        const id = args.id as number;
+        await client.caseDelete(id);
+        return ok(`Case ${id} deleted`);
+      }
+
+      case 'octo_cases_link': {
+        const id = args.id as number;
+        await client.caseAddRelation(id, {
+          type: String(args.type),
+          targetId: String(args.targetId),
+        });
+        return ok(`Relation added to case ${id}`);
+      }
+
+      case 'octo_cases_unlink': {
+        const id = args.id as number;
+        const relationId = args.relationId as number;
+        await client.caseDeleteRelation(id, relationId);
+        return ok(`Relation ${relationId} removed from case ${id}`);
+      }
+
+      case 'octo_cases_note_add': {
+        const id = args.id as number;
+        await client.caseAddNote(id, String(args.text));
+        return ok(`Note added to case ${id}`);
+      }
+
+      case 'octo_cases_note_update': {
+        const id = args.id as number;
+        const noteId = args.noteId as number;
+        await client.caseUpdateNote(id, noteId, String(args.text));
+        return ok(`Note ${noteId} updated on case ${id}`);
+      }
+
+      case 'octo_cases_groups_all': {
+        const data = await client.caseGroupsAll();
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_cases_group_create': {
+        await client.caseGroupCreate({ name: String(args.name) });
+        return ok(`Case group "${String(args.name)}" created`);
+      }
+
+      case 'octo_trace_search': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.traceSpanList({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          limit: args.limit as number | undefined,
+          order: args.order as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_trace_aggregate': {
+        const { env, from, to } = timeDefaults(args);
+        const aggField = String(args.aggregation_field ?? '*');
+        const aggOp = String(args.aggregation_op ?? 'count');
+        const groupBy = args.group_by as string | undefined;
+        const groupLimit = Number(args.group_limit ?? 10);
+
+        const data = await client.traceAggregate({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          aggregationFields: [{ field: aggField, operation: aggOp }],
+          groupFields: groupBy
+            ? [
+                {
+                  field: groupBy,
+                  limit: groupLimit,
+                  sort: { field: aggField, operation: aggOp, order: 'desc' },
+                },
+              ]
+            : undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_metrics_query': {
+        const { env, from, to } = timeDefaults(args);
+        const queryStrs = args.queries as string[];
+        const queries = queryStrs.map((q, i) => ({
+          id: String.fromCharCode(65 + i),
+          query: q,
+          dataSource: 'metric',
+        }));
+        const data = await client.metricsTimeseries({
+          env,
+          from,
+          to,
+          pointCount: (args.point_count as number) ?? 150,
+          queries,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_metrics_point': {
+        const queryStrs = args.queries as string[];
+        const queries = queryStrs.map((q, i) => ({
+          id: String.fromCharCode(65 + i),
+          query: q,
+          dataSource: 'metric',
+        }));
+        const at = parsePointInTime(args.at);
+        const data = await client.metricsQuery({
+          env: String(args.env ?? getDefaultEnv()),
+          to: at,
+          queries,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_services_list': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.servicesList({ env, from, to });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_services_entries': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.servicesEntries({
+          env,
+          from,
+          to,
+          service: String(args.service),
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_services_topology': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.servicesTopology({
+          env,
+          from,
+          to,
+          service: String(args.service),
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_llm_list': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.llmList({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          pageSize: args.limit as number | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_rum_list': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.rumList({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          pageSize: args.limit as number | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_rum_detail': {
+        const data = await client.rumDetail(String(args.id));
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_events_list': {
+        const { env, from, to } = timeDefaults(args);
+        const data = await client.eventList({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          pageSize: args.limit as number | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_users_search': {
+        const data = await client.usersSearch(args.names as string[]);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      default:
+        return fail(`Unknown tool: ${name}`);
+    }
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function startMcpServer(): Promise<void> {
   const server = new Server(
     { name: 'octo-mcp', version: '0.1.0' },
@@ -82,668 +1262,12 @@ export async function startMcpServer(): Promise<void> {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'octo_logs_search',
-        description:
-          'Search Octopus logs. Returns log entries with message, level, attributes, traceId.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            limit: {
-              type: 'number',
-              description: 'Max results (default 50, max 500)',
-            },
-            order: {
-              type: 'string',
-              description: 'asc or desc',
-              enum: ['asc', 'desc'],
-            },
-          },
-        },
-      },
-      {
-        name: 'octo_logs_aggregate',
-        description:
-          'Aggregate Octopus logs — count, avg, max, min, sum, percentile, grouped by fields.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            aggregation_field: {
-              type: 'string',
-              description: 'Field to aggregate (use "*" for count)',
-            },
-            aggregation_op: {
-              type: 'string',
-              description:
-                'Operation: count, sum, avg, max, min, p50, p95, p99',
-            },
-            group_by: {
-              type: 'string',
-              description: 'Field to group by (e.g. "service", "level")',
-            },
-            group_limit: {
-              type: 'number',
-              description: 'Max groups (default 10)',
-            },
-          },
-        },
-      },
-      {
-        name: 'octo_alerts_search',
-        description:
-          'Search Octopus alerts. Filter by status (firing/resolved), priority (P0/P1/P2), services.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            status: {
-              type: 'string',
-              description: 'all, firing, or resolved',
-              enum: ['all', 'firing', 'resolved'],
-            },
-            priorities: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Priority filter, e.g. ["P0","P1"]',
-            },
-            services: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Service name filter',
-            },
-            limit: { type: 'number', description: 'Max results' },
-            groupId: {
-              type: 'number',
-              description: 'Alert rule group ID',
-            },
-            ruleIds: {
-              type: 'array',
-              items: { type: 'number' },
-              description: 'Filter by specific alert rule IDs',
-            },
-          },
-        },
-      },
-      {
-        name: 'octo_alerts_rules_search',
-        description:
-          'Search Octopus alert rules. Filter by group, env, priority, status, type, tags, creator.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            groupId: {
-              type: 'number',
-              description: 'Alert rule group ID (-1 for all groups)',
-            },
-            env: envProp,
-            priority: {
-              type: 'string',
-              description: 'Priority filter: P0, P1, P2',
-            },
-            statusList: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Status filter: enabled, disabled, paused, silenced',
-            },
-            searchInput: {
-              type: 'string',
-              description: 'Search keyword for rule name',
-            },
-            types: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Rule type filter: log, metric, issue, rum, llm',
-            },
-            service: { type: 'string', description: 'Service name filter' },
-            tags: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Tag filter',
-            },
-            creator: { type: 'string', description: 'Creator name filter' },
-            pageNo: { type: 'number', description: 'Page number (default 1)' },
-            pageSize: {
-              type: 'number',
-              description: 'Page size (default 20)',
-            },
-          },
-        },
-      },
-      {
-        name: 'octo_alerts_rules_create',
-        description:
-          'Create Octopus alert rules. Accepts an array of rule objects. ' +
-          'Each rule needs: name, env, groupId, ruleType (log/metric/issue/rum/llm), ' +
-          'priority (P0/P1/P2/UNKNOWN), conditionEvaluationType (single/and/or), ' +
-          'conditions (array with period, comparison, threshold, alertQueryInfo), ' +
-          'notice (receivers, repeatNoticeInterval, effectiveWeeks, etc.), tags, active. ' +
-          'Tip: use octo_alerts_rules_search to find existing rules as payload templates.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            rules: {
-              type: 'array',
-              items: { type: 'object' },
-              description:
-                'Array of alert rule objects (AlertRuleCreateVO). See tool description for required fields.',
-            },
-          },
-          required: ['rules'],
-        },
-      },
-      {
-        name: 'octo_alerts_rules_delete',
-        description: 'Delete an Octopus alert rule by ID.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            ruleId: {
-              type: 'number',
-              description: 'Alert rule ID to delete',
-            },
-          },
-          required: ['ruleId'],
-        },
-      },
-      {
-        name: 'octo_alerts_detail',
-        description:
-          'Get Octopus alert detail including rule conditions, trigger dimensions, and status.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            alertId: {
-              type: 'number',
-              description: 'Alert ID',
-            },
-          },
-          required: ['alertId'],
-        },
-      },
-      {
-        name: 'octo_alerts_timeseries',
-        description:
-          'Get Octopus alert detection timeseries data (time points, values, labels, condition status).',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            alertId: {
-              type: 'number',
-              description: 'Alert ID',
-            },
-            from: fromProp,
-            to: toProp,
-            conditionId: {
-              type: 'number',
-              description: 'Condition ID (default 0 for first condition)',
-            },
-          },
-          required: ['alertId'],
-        },
-      },
-      {
-        name: 'octo_alerts_silence_create',
-        description:
-          'Create an alert silence (mute) in Octopus. Suppresses notifications for a rule during a time window.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            ruleId: {
-              type: 'number',
-              description: 'Alert rule ID to silence',
-            },
-            alertId: {
-              type: 'number',
-              description: 'Specific alert ID to silence',
-            },
-            durationMinutes: {
-              type: 'number',
-              description:
-                'Silence duration in minutes (e.g. 120 for 2 hours). Alternative to endTime.',
-            },
-            startTime: {
-              type: 'number',
-              description: 'Silence start time in epoch ms (default: now)',
-            },
-            endTime: {
-              type: 'number',
-              description:
-                'Silence end time in epoch ms. Required if durationMinutes is not set.',
-            },
-            scope: {
-              type: 'string',
-              description: 'Silence scope',
-              enum: ['ALL', 'SPECIFY'],
-            },
-            specifyGroups: {
-              type: 'object',
-              description:
-                'When scope=specify, map of group field to values array',
-            },
-            silentlyNotify: {
-              type: 'boolean',
-              description: 'Whether to send notification about the silence',
-            },
-          },
-          required: ['ruleId', 'alertId'],
-        },
-      },
-      {
-        name: 'octo_alerts_silence_delete',
-        description: 'Delete (cancel) an alert silence in Octopus.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            ruleId: {
-              type: 'number',
-              description: 'Alert rule ID whose silence to remove',
-            },
-          },
-          required: ['ruleId'],
-        },
-      },
-      {
-        name: 'octo_issues_search',
-        description:
-          'Search Octopus error tracking issues. Returns error type, count, service, status.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            status: {
-              type: 'string',
-              description: 'unresolved, resolved, ignored, or all',
-              enum: ['unresolved', 'resolved', 'ignored', 'all'],
-            },
-            sort_type: {
-              type: 'string',
-              description: 'logCount or firstSeen',
-              enum: ['logCount', 'firstSeen'],
-            },
-          },
-        },
-      },
-      {
-        name: 'octo_trace_search',
-        description:
-          'Search Octopus trace spans. Returns span name, service, duration, status, traceId.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            limit: { type: 'number', description: 'Max results (max 500)' },
-            order: {
-              type: 'string',
-              enum: ['asc', 'desc'],
-            },
-          },
-        },
-      },
-      {
-        name: 'octo_metrics_query',
-        description:
-          'Query Octopus metrics timeseries. Use metric query syntax like "sum(metric_name{tag=value}.as_count)".',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            queries: {
-              type: 'array',
-              items: { type: 'string' },
-              description:
-                'Metric query strings, e.g. ["sum(http_requests{service=myapp}.as_count)"]',
-            },
-            point_count: {
-              type: 'number',
-              description: 'Number of data points (default 150)',
-            },
-          },
-          required: ['queries'],
-        },
-      },
-      {
-        name: 'octo_services_list',
-        description: 'List Octopus APM services.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-          },
-        },
-      },
-      {
-        name: 'octo_services_topology',
-        description:
-          'Get service call topology graph — upstream/downstream services and edges.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            service: {
-              type: 'string',
-              description: 'Service name',
-            },
-          },
-          required: ['service'],
-        },
-      },
-      {
-        name: 'octo_llm_list',
-        description:
-          'Query Octopus LLM observability spans — model, tokens, cost, duration.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            limit: { type: 'number', description: 'Page size' },
-          },
-        },
-      },
-      {
-        name: 'octo_rum_list',
-        description:
-          'Query Octopus RUM (Real User Monitoring) events — sessions, views, actions, errors.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            limit: { type: 'number', description: 'Page size' },
-          },
-        },
-      },
-      {
-        name: 'octo_events_list',
-        description:
-          'Query Octopus events — deployments, config changes, incidents.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            env: envProp,
-            from: fromProp,
-            to: toProp,
-            query: queryProp,
-            limit: { type: 'number', description: 'Page size' },
-          },
-        },
-      },
-    ],
+    tools: getMcpTools(),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-
-    try {
-      const client = getClient();
-
-      switch (request.params.name) {
-        case 'octo_logs_search': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.logsSearch({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            limit: args.limit as number | undefined,
-            order: args.order as string | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_logs_aggregate': {
-          const { env, from, to } = timeDefaults(args);
-          const aggField = String(args.aggregation_field ?? '*');
-          const aggOp = String(args.aggregation_op ?? 'count');
-          const groupBy = args.group_by as string | undefined;
-          const groupLimit = Number(args.group_limit ?? 10);
-
-          const data = await client.logsAggregate({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            aggregationFields: [{ field: aggField, operation: aggOp }],
-            groupFields: groupBy
-              ? [
-                  {
-                    field: groupBy,
-                    limit: groupLimit,
-                    sort: { field: aggField, operation: aggOp, order: 'desc' },
-                  },
-                ]
-              : undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_search': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.alertsSearch({
-            from,
-            to,
-            env,
-            status: (args.status as string) ?? 'all',
-            priorities: args.priorities as string[] | undefined,
-            services: args.services as string[] | undefined,
-            limit: args.limit as number | undefined,
-            groupId: args.groupId as number | undefined,
-            ruleIds: args.ruleIds as number[] | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_rules_search': {
-          const data = await client.alertRulesSearch({
-            groupId: (args.groupId as number) ?? -1,
-            env: args.env as string | undefined,
-            priority: args.priority as string | undefined,
-            statusList: args.statusList as string[] | undefined,
-            searchInput: args.searchInput as string | undefined,
-            types: args.types as string[] | undefined,
-            service: args.service as string | undefined,
-            tags: args.tags as string[] | undefined,
-            creator: args.creator as string | undefined,
-            pageParam: {
-              pageNo: (args.pageNo as number) ?? 1,
-              pageSize: (args.pageSize as number) ?? 20,
-            },
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_rules_create': {
-          const rules = args.rules as unknown[];
-          if (!Array.isArray(rules) || rules.length === 0) {
-            return fail('rules must be a non-empty array');
-          }
-          const data = await client.alertRulesCreate(rules);
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_rules_delete': {
-          const ruleId = args.ruleId as number;
-          await client.alertRulesDelete(ruleId);
-          return ok(`Alert rule ${ruleId} deleted`);
-        }
-
-        case 'octo_alerts_detail': {
-          const data = await client.alertDetail(args.alertId as number);
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_timeseries': {
-          const { from, to } = timeDefaults(args);
-          const data = await client.alertTimeseries({
-            alertId: args.alertId as number,
-            from,
-            to,
-            conditionId: args.conditionId as number | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_silence_create': {
-          const now = Date.now();
-          const startTime = (args.startTime as number) ?? now;
-          let endTime = args.endTime as number | undefined;
-          if (!endTime && args.durationMinutes) {
-            endTime = startTime + (args.durationMinutes as number) * 60_000;
-          }
-          if (!endTime) {
-            return fail('Either endTime or durationMinutes is required');
-          }
-          const data = await client.alertSilenceCreate({
-            ruleId: args.ruleId as number,
-            alertId: args.alertId as number,
-            startTime,
-            endTime,
-            scope: (args.scope as string) ?? 'ALL',
-            specifyGroups: args.specifyGroups as
-              | Record<string, string[]>
-              | undefined,
-            silentlyNotify: (args.silentlyNotify as boolean) ?? false,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_alerts_silence_delete': {
-          const ruleId = args.ruleId as number;
-          await client.alertSilenceDelete(ruleId);
-          return ok(`Silence for rule ${ruleId} deleted`);
-        }
-
-        case 'octo_issues_search': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.issuesSearch({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            status: (args.status as string) ?? 'unresolved',
-            sortType: (args.sort_type as string) ?? 'logCount',
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_trace_search': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.traceSpanList({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            limit: args.limit as number | undefined,
-            order: args.order as string | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_metrics_query': {
-          const { env, from, to } = timeDefaults(args);
-          const queryStrs = args.queries as string[];
-          const queries = queryStrs.map((q, i) => ({
-            id: String.fromCharCode(65 + i),
-            query: q,
-            dataSource: 'metric',
-          }));
-          const data = await client.metricsTimeseries({
-            env,
-            from,
-            to,
-            pointCount: (args.point_count as number) ?? 150,
-            queries,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_services_list': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.servicesList({ env, from, to });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_services_topology': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.servicesTopology({
-            env,
-            from,
-            to,
-            service: String(args.service),
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_llm_list': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.llmList({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            pageSize: args.limit as number | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_rum_list': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.rumList({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            pageSize: args.limit as number | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        case 'octo_events_list': {
-          const { env, from, to } = timeDefaults(args);
-          const data = await client.eventList({
-            env,
-            from,
-            to,
-            query: args.query as string | undefined,
-            pageSize: args.limit as number | undefined,
-          });
-          return ok(JSON.stringify(data, null, 2));
-        }
-
-        default:
-          return fail(`Unknown tool: ${request.params.name}`);
-      }
-    } catch (err) {
-      return fail(err);
-    }
+    return handleMcpTool(request.params.name, args);
   });
 
   const transport = new StdioServerTransport();

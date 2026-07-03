@@ -1,6 +1,6 @@
 ---
 name: octopus-openapi
-description: Octopus OpenAPI 接口指南。涵盖 ApplicationKey 与 V1/V2（OC-HMAC-SHA256 / OC-HMAC-SHA256-2）鉴权、Python/Java SDK、日志/Trace/指标（含 V2.0）/错误追踪/告警/服务 APM/大盘/用户/LLM/RUM/事件等 HTTP 接口与限流说明。用于对接 Octopus 可观测数据开放 API。
+description: Octopus OpenAPI 接口指南。涵盖 ApplicationKey 与 V1/V2（OC-HMAC-SHA256 / OC-HMAC-SHA256-2）鉴权、Python/Java SDK、日志/Trace/指标（含 V2.0）/错误追踪/Case/告警/服务 APM/大盘/用户/LLM/RUM/事件等 HTTP 接口与限流说明。用于对接 Octopus 可观测数据开放 API。
 version: 1.1.0
 tags:
   - octopus
@@ -25,13 +25,14 @@ tags:
 | [Trace](#四trace-查询相关接口) | span list / aggregate |
 | [指标](#五指标查询相关接口) | timeseries / queryMetric，及 [V2.0](#指标接口-v20) |
 | [错误追踪](#六错误追踪相关接口) | Issue 查询、详情、分布、分配、状态与 `ignoreRule` |
-| [告警](#七告警查询相关接口) | 告警查询、规则 CRUD、静默 |
-| [服务 APM](#八服务查询相关接口) | 入口/上下游/拓扑/时序等 |
-| [大盘](#九大盘相关接口) | 创建 / 更新 / 删除大盘 |
-| [用户](#十用户查询相关接口) | 用户列表 |
-| [LLM](#十一llm-查询相关接口) | LLM span 列表 |
-| [RUM](#十二rum-查询相关接口) | 列表 / 详情 / 聚合 |
-| [事件](#十三事件查询相关接口) | Event 列表 |
+| [Case](#七case-相关接口) | Case 列表、详情、创建更新、关系、备注、分组 |
+| [告警](#八告警查询相关接口) | 告警查询、规则 CRUD、静默 |
+| [服务 APM](#九服务查询相关接口) | 入口/上下游/拓扑/时序等 |
+| [大盘](#十大盘相关接口) | 创建 / 更新大盘 |
+| [用户](#十一用户查询相关接口) | 用户列表 |
+| [LLM](#十二llm-查询相关接口) | LLM span 列表 |
+| [RUM](#十三rum-查询相关接口) | 列表 / 详情 / 聚合 |
+| [事件](#十四事件查询相关接口) | Event 列表 |
 
 **API 根路径约定**：下文接口路径均以 `https://<host>/infra-octopus-openapi/v1` 为前缀。常见 host 为 `octopus-app.zhenguanyu.com`（与官方 SDK 示例一致）；部分文档链接使用 `octopus.zhenguanyu.com`，部署环境以前者为准或按运维说明切换。
 
@@ -452,39 +453,79 @@ public class OctopusOpenapiClient {
 
 ---
 
-## 七、告警查询相关接口
+## 七、Case 相关接口
+
+Case 返回结构与 `infra-octopus-rest` 的 Case API 保持一致；OpenAPI 模块内定义同构 DTO，不直接依赖 REST 模块的 Logic/VO。
+
+### 7.1 Case 列表 `POST /infra-octopus-openapi/v1/cases/list`
+
+请求字段：`pageNo`、`pageSize`、`groupId`、`status`（`todo` | `doing` | `done`）、`priority`（`NONE` | `P0` | `P1` | `P2`）、`assignerId`、`input`（按名称匹配）。返回 `PageData<CaseListVO>`。
+
+### 7.2 创建 Case `POST /infra-octopus-openapi/v1/cases`
+
+请求字段：`name`、`groupId`、`priority`、`status`、`assignerId`、`description`。未传 `priority` / `status` 时服务端默认 `NONE` / `todo`。
+
+### 7.3 Case 详情
+
+- 按 ID：`POST /infra-octopus-openapi/v1/cases/{id}`
+- 按 CaseKey：`POST /infra-octopus-openapi/v1/cases/key/{caseKey}`
+
+详情包含 `relationList` 与 `timelineList`。关联对象字段语义：Alert 关系使用 `relationList[].alert`，Issue 关系使用 `relationList[].issue`。
+
+### 7.4 更新 / 删除 Case
+
+- 更新：`PUT /infra-octopus-openapi/v1/cases/{id}`，请求字段为 `groupId`、`priority`、`status`、`assignerId`、`description`
+- 删除：`DELETE /infra-octopus-openapi/v1/cases/{id}`
+
+### 7.5 Case 关系与备注
+
+- 关联告警或 Issue：`POST /infra-octopus-openapi/v1/cases/{id}/relation`，请求示例 `{"type":"alert","targetId":"12345"}` 或 `{"type":"issue","targetId":"issue-id"}`
+- 取消关联：`DELETE /infra-octopus-openapi/v1/cases/{id}/relation/{relationId}`
+- 添加备注：`POST /infra-octopus-openapi/v1/cases/{id}/note`，请求体为备注字符串
+- 修改备注：`PUT /infra-octopus-openapi/v1/cases/{id}/note/{noteId}`，请求体为备注字符串
+
+### 7.6 Case 分组
+
+- 全部分组：`GET /infra-octopus-openapi/v1/cases/groups/all`
+- 创建分组：`POST /infra-octopus-openapi/v1/cases/groups`，请求字段 `name`
+
+写操作操作人：ApplicationKey 使用 `userId=0`、`ldap=appId`、`name=applicationKey.name`；Personal Access Token 使用 `userId=pat.userId`、`ldap=Pat:{pat.id}`、`name=pat.name`。
+
+---
+
+## 八、告警查询相关接口
 
 **限流**：单 AppId 每 10 秒 **50** 次（除非另有说明）。
 
-### 7.1 告警查询 `POST /infra-octopus-openapi/v1/alerts/search`
+### 8.1 告警查询 `POST /infra-octopus-openapi/v1/alerts/search`
 
 参数示例：`env`、`from`、`to`、`limit`、`pageNo`、`priorities`（UNKNOWN/P0/P1/P2）、`query`、`status`（all/firing/resolved）、`services`、`alertRuleType`。
 
-### 7.2 告警规则搜索 `POST /infra-octopus-openapi/v1/alert/rules/search`
+### 8.2 告警规则搜索 `POST /infra-octopus-openapi/v1/alert/rules/search`
 
 含 `groupId`、`pageParam`、`statusList`（enabled/disabled/paused/silenced）、`searchInput`、`types`、`tags`、`creator` 等。
 
-### 7.3 创建告警规则 `POST /infra-octopus-openapi/v1/alert/rules`
+### 8.3 创建告警规则 `POST /infra-octopus-openapi/v1/alert/rules`
 
 Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`（log/metric/issue）、`conditions`、`conditionEvaluationType`（single/and/or）、`notice`、`groupId`、`tags`、`active` 等（结构复杂，以 Notion 长 JSON 为准）。
 
-### 7.4 删除告警规则 `DELETE /infra-octopus-openapi/v1/alert/rules`
+### 8.4 删除告警规则 `DELETE /infra-octopus-openapi/v1/alert/rules`
 
 请求体含待删 **`ruleId`**（以线上实际为准：亦有文档写作 `ruleIds` 列表，集成时请对照 Swagger）。
 
-### 7.5 告警静默 `POST /infra-octopus-openapi/v1/alerts/silences/create`
+### 8.5 告警静默 `POST /infra-octopus-openapi/v1/alerts/silences/create`
 
 `ruleId`、`alertId`、`startTime`、`endTime`、`scope`（如 ALL / SPECIFY）、`specifyGroups`、`silentlyNotify`。
 
-### 7.6 删除静默 `DELETE /infra-octopus-openapi/v1/alerts/silences/{ruleId}`
+### 8.6 删除静默 `DELETE /infra-octopus-openapi/v1/alerts/silences/{ruleId}`
 
-### 7.7 告警详情 `GET /infra-octopus-openapi/v1/alerts/{id}`
+### 8.7 告警详情 `GET /infra-octopus-openapi/v1/alerts/{id}`
 
 返回告警基本信息、规则条件（含查询表达式和阈值）及触发维度组合。
 
 响应字段：`id`、`title`、`priority`、`status`、`env`、`scope`、`alertRuleType`、`activeTime`、`duration`、`tags`、`description`、`rule`（含 `id`、`name`、`conditionEvaluationType`、`conditions`）、`activeMergedGroup`。
 
-### 7.8 告警检测时序数据 `GET /infra-octopus-openapi/v1/alerts/{id}/timeseries`
+### 8.8 告警检测时序数据 `GET /infra-octopus-openapi/v1/alerts/{id}/timeseries`
 
 返回告警对应的检测时序数据（时间点、值、标签、条件状态），供分析告警触发趋势使用。
 
@@ -494,7 +535,7 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ---
 
-## 八、服务查询相关接口
+## 九、服务查询相关接口
 
 **限流**：单 AppId 每 10 秒 **50** 次。
 
@@ -514,17 +555,16 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ---
 
-## 九、大盘相关接口
+## 十、大盘相关接口
 
 - **创建** `POST /infra-octopus-openapi/v1/dashboards`：Body 含 `parent`（**目录 id，必填**）、`title`、`variableList`、`widgetList` 等；结构复杂，建议从页面已有大盘导出 JSON 再改。可参考浏览器控制台拉取 `infra-octopus-rest` 下大盘详情接口中的 `data` 字段（见 Notion 原文）。
 - **更新** `PUT /infra-octopus-openapi/v1/dashboards/{id}`：**全量覆盖**。
-- **删除** `DELETE /infra-octopus-openapi/v1/dashboards/{id}`：当前仅可删 **同一 APP_ID 创建** 的大盘。
 
 业务与数据结构可能迭代，以最新文档为准。
 
 ---
 
-## 十、用户查询相关接口
+## 十一、用户查询相关接口
 
 ### 用户列表 `POST /infra-octopus-openapi/v1/users/search`
 
@@ -532,7 +572,7 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ---
 
-## 十一、LLM 查询相关接口
+## 十二、LLM 查询相关接口
 
 ### LLM 列表 `POST /infra-octopus-openapi/v1/llm/span/list`
 
@@ -542,7 +582,7 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ---
 
-## 十二、RUM 查询相关接口
+## 十三、RUM 查询相关接口
 
 | 接口 | 方法 | 路径 |
 |------|------|------|
@@ -554,7 +594,7 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ---
 
-## 十三、事件查询相关接口
+## 十四、事件查询相关接口
 
 ### Event 列表 `POST /infra-octopus-openapi/v1/event/list`
 
