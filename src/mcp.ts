@@ -52,6 +52,11 @@ const fromProp = {
   description:
     'Start time in epoch milliseconds. If omitted, the tool defaults to the last 15 minutes; for "last 1h", pass now-3600000.',
 };
+const serviceFromProp = {
+  type: 'number',
+  description:
+    'Start time in epoch milliseconds. If omitted, defaults to the last 1 hour to match the CLI services commands.',
+};
 const toProp = {
   type: 'number',
   description: 'End time in epoch milliseconds. If omitted, defaults to now.',
@@ -81,11 +86,27 @@ function timeDefaults(args: Record<string, unknown>): {
   env: string;
   from: number;
   to: number;
+};
+function timeDefaults(
+  args: Record<string, unknown>,
+  defaultWindowMs: number
+): {
+  env: string;
+  from: number;
+  to: number;
+};
+function timeDefaults(
+  args: Record<string, unknown>,
+  defaultWindowMs = 15 * 60_000
+): {
+  env: string;
+  from: number;
+  to: number;
 } {
   const now = Date.now();
   return {
     env: String(args.env ?? getDefaultEnv()),
-    from: Number(args.from ?? now - 15 * 60_000),
+    from: Number(args.from ?? now - defaultWindowMs),
     to: Number(args.to ?? now),
   };
 }
@@ -715,7 +736,7 @@ export function getMcpTools() {
         type: 'object' as const,
         properties: {
           env: envProp,
-          from: fromProp,
+          from: serviceFromProp,
           to: toProp,
         },
       },
@@ -727,7 +748,7 @@ export function getMcpTools() {
         type: 'object' as const,
         properties: {
           env: envProp,
-          from: fromProp,
+          from: serviceFromProp,
           to: toProp,
           service: {
             type: 'string',
@@ -1174,13 +1195,13 @@ export async function handleMcpTool(
       }
 
       case 'octo_services_list': {
-        const { env, from, to } = timeDefaults(args);
+        const { env, from, to } = timeDefaults(args, 60 * 60_000);
         const data = await client.servicesList({ env, from, to });
         return ok(JSON.stringify(data, null, 2));
       }
 
       case 'octo_services_entries': {
-        const { env, from, to } = timeDefaults(args);
+        const { env, from, to } = timeDefaults(args, 60 * 60_000);
         const data = await client.servicesEntries({
           env,
           from,

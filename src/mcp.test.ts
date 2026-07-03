@@ -32,6 +32,7 @@ function testClient() {
 
 describe('MCP tools', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
@@ -197,6 +198,31 @@ describe('MCP tools', () => {
     );
     expect(JSON.parse(calls[2].body)).toEqual({
       names: ['alice', 'bob'],
+    });
+  });
+
+  it('defaults service entries to the CLI 1h time window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-03T12:00:00.000Z'));
+    vi.stubEnv('OCTOPUS_ENV', 'default-env');
+    const client = testClient();
+    const calls = captureFetch();
+
+    await handleMcpTool(
+      'octo_services_entries',
+      { service: 'checkout' },
+      client
+    );
+
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/apm/query/entries'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      env: 'default-env',
+      from: 1_783_076_400_000,
+      to: 1_783_080_000_000,
+      service: 'checkout',
     });
   });
 

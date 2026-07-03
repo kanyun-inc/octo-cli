@@ -456,7 +456,6 @@ export function registerCommands(program: Command): void {
           : undefined,
         description: opts.description,
       });
-      console.log('Case created');
       if (data) printOutput(data, opts.output as OutputFormat);
     });
 
