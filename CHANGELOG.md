@@ -1,5 +1,11 @@
 # octo-cli
 
+## 0.9.0
+
+### Minor Changes
+
+- ddbbc38: Add OpenAPI Case support across CLI, MCP tools, client wrappers, docs, and tests.
+
 ## 0.8.3
 
 ### Patch Changes
