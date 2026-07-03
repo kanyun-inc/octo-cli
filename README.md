@@ -124,7 +124,7 @@ $ # 根因：resume 机制 + onFinish 回调 + 状态刷新形成无限循环
 ## 功能特性
 
 - **Agent 原生接入** —— `login` 全局装 Skill，`init` 生成项目上下文，Agent 自己填写
-- **全量 Octopus OpenAPI 覆盖** —— 日志、告警、Issue、链路、指标、服务、LLM、RUM、事件、大盘
+- **全量 Octopus OpenAPI 覆盖** —— 日志、告警、Issue、Case、链路、指标、服务、LLM、RUM、事件、大盘
 - **人性化时间范围** —— `--last 15m`、`--last 2h`、`--last 7d`
 - **多种输出格式** —— `--output json`、`--output table`、`--output jsonl`
 - **MCP Server** —— 内置 stdio MCP Server，支持 Claude Code、Cursor 等
@@ -221,6 +221,16 @@ octo-cli issues assign --user 123 --ids id1,id2          # 分配 Issue
 octo-cli issues update --ids id1,id2 -s resolved          # 解决 Issue
 ```
 
+### Case
+
+```bash
+octo-cli cases list --status todo --priority P1           # 待处理 Case
+octo-cli cases create --name "线上故障" --group-id 1 --priority P0
+octo-cli cases detail <caseId>                            # Case 详情
+octo-cli cases link <caseId> --type alert --target-id 123 # 关联告警
+octo-cli cases note <caseId> --text "已通知负责人"          # 添加备注
+```
+
 ### 链路 (Trace)
 
 ```bash
@@ -277,6 +287,13 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `issues detail` | Issue 详情 |
 | `issues assign` | 批量分配 Issue |
 | `issues update` | 批量更新 Issue 状态 |
+| `cases list` | 查询 Case |
+| `cases create` | 创建 Case |
+| `cases detail` / `cases detail-key` | Case 详情 |
+| `cases update` / `cases delete` | 更新或删除 Case |
+| `cases link` / `cases unlink` | 关联或取消关联告警/Issue |
+| `cases note` / `cases note-update` | 添加或修改 Case 备注 |
+| `cases groups` / `cases group-create` | 查询或创建 Case 分组 |
 | `trace search` | 搜索链路 Span |
 | `trace aggregate` | 链路聚合 |
 | `metrics query` | 指标时序查询 |
@@ -373,13 +390,28 @@ npx octo-cli mcp-install
 | `octo_alerts_silence_create` | 创建告警静默 |
 | `octo_alerts_silence_delete` | 解除告警静默 |
 | `octo_issues_search` | 搜索错误追踪 Issue |
+| `octo_issues_detail` | Issue 详情 |
+| `octo_issues_assign` | 批量分配 Issue |
+| `octo_issues_update` | 批量更新 Issue 状态 |
+| `octo_cases_list` | 查询 Case |
+| `octo_cases_create` | 创建 Case |
+| `octo_cases_detail` / `octo_cases_detail_by_key` | Case 详情 |
+| `octo_cases_update` / `octo_cases_delete` | 更新或删除 Case |
+| `octo_cases_link` / `octo_cases_unlink` | 关联或取消关联告警/Issue |
+| `octo_cases_note_add` / `octo_cases_note_update` | 添加或修改 Case 备注 |
+| `octo_cases_groups_all` / `octo_cases_group_create` | 查询或创建 Case 分组 |
 | `octo_trace_search` | 搜索链路 Span |
+| `octo_trace_aggregate` | 链路聚合 |
 | `octo_metrics_query` | 指标时序查询 |
+| `octo_metrics_point` | 指标单点查询 |
 | `octo_services_list` | 服务列表 |
+| `octo_services_entries` | 服务入口列表 |
 | `octo_services_topology` | 服务拓扑图 |
 | `octo_llm_list` | LLM Span 查询 |
 | `octo_rum_list` | RUM 事件查询 |
+| `octo_rum_detail` | RUM 事件详情 |
 | `octo_events_list` | 事件查询 |
+| `octo_users_search` | 用户搜索 |
 
 ## 配套 Skill
 
@@ -408,13 +440,14 @@ octo-cli 封装了 [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b68
 | 日志 | `/v1/logs/search`、`/v1/logs/aggregate` |
 | 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
 | Issue | `/v1/log-error-tracking/issues/*` |
+| Case | `/v1/cases/*`、`/v1/cases/groups/*` |
 | 链路 | `/v1/trace/span/list`、`/v1/trace/aggregate` |
 | 指标 | `/v1/metrics/query/timeseries`、`/v1/metrics/query/queryMetric` |
 | 服务 | `/v1/apm/query/*`、`/v1/apm/topology/*` |
 | LLM | `/v1/llm/span/list` |
 | RUM | `/v1/rum/list`、`/v1/rum/{id}`、`/v1/rum/aggregate` |
 | 事件 | `/v1/event/list` |
-| 大盘 | `/v1/dashboards`（CRUD） |
+| 大盘 | `/v1/dashboards`（创建 / 更新） |
 | 用户 | `/v1/users/search` |
 
 鉴权：支持 Personal Access Token（Bearer Token）和 Application Key（OC-HMAC-SHA256-2 签名）。默认地址：`https://octopus-app.zhenguanyu.com`。

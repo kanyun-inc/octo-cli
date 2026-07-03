@@ -1,6 +1,6 @@
 ---
 name: octo
-description: Query Octopus observability platform — logs, alerts, traces, metrics, issues, services, LLM, RUM, events. Triggers on "logs", "alerts", "traces", "metrics", "octopus", "observability", "error tracking", "RUM", "LLM observability"
+description: Query Octopus observability platform — logs, alerts, traces, metrics, issues, cases, services, LLM, RUM, events. Triggers on "logs", "alerts", "traces", "metrics", "octopus", "observability", "error tracking", "cases", "RUM", "LLM observability"
 version: 0.2.0
 author: kris
 tags:
@@ -10,14 +10,15 @@ tags:
   - alerts
   - traces
   - metrics
+  - cases
 user-invocable: true
-argument-hint: "logs search -q 'level = ERROR' | alerts search -s firing | trace search"
+argument-hint: "logs search -q 'level = ERROR' | alerts search -s firing | cases list | trace search"
 allowed-tools: Bash(*)
 ---
 
 # Octopus CLI — Query Observability Data
 
-CLI tool `octo-cli` for querying the Octopus observability platform (octopus.zhenguanyu.com). Covers logs, alerts, error tracking, traces, metrics, services, LLM, RUM, and events.
+CLI tool `octo-cli` for querying the Octopus observability platform (octopus.zhenguanyu.com). Covers logs, alerts, error tracking, cases, traces, metrics, services, LLM, RUM, and events.
 
 ## Onboarding (first time in a project)
 
@@ -76,6 +77,9 @@ npx octo-cli rum list -q "application.name = <SERVICE>" -e online -l 1d -n 1
 
 # Check existing issues
 npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
+
+# Check open cases
+npx octo-cli cases list --status todo --input "<SERVICE>"
 ```
 
 **3c. Write findings into the template**, replacing all `<!-- AGENT: -->` sections.
@@ -249,6 +253,25 @@ npx octo-cli issues detail <issueId>
 # Manage
 npx octo-cli issues assign --user 123 --ids id1,id2
 npx octo-cli issues update --ids id1,id2 -s resolved
+```
+
+### Cases
+
+```bash
+# List cases
+npx octo-cli cases list --status todo --priority P1
+npx octo-cli cases list --group-id 1 --input "checkout" --page 1 --page-size 20
+
+# Create and inspect
+npx octo-cli cases create --name "checkout incident" --group-id 1 --priority P0
+npx octo-cli cases detail <caseId>
+npx octo-cli cases detail-key <caseKey>
+
+# Manage relations and notes
+npx octo-cli cases link <caseId> --type alert --target-id 12345
+npx octo-cli cases link <caseId> --type issue --target-id <issueId>
+npx octo-cli cases note <caseId> --text "owner notified"
+npx octo-cli cases groups
 ```
 
 ### Traces

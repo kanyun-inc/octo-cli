@@ -404,6 +404,192 @@ export function registerCommands(program: Command): void {
       console.log('Issues updated');
     });
 
+  // ─── cases ───────────────────────────────────────────────
+  const cases = program.command('cases').description('Case operations');
+
+  cases
+    .command('list')
+    .description('List cases')
+    .option('--group-id <id>', 'Case group ID')
+    .option('-s, --status <status>', 'todo, doing, or done')
+    .option('-p, --priority <priority>', 'NONE, P0, P1, or P2')
+    .option('--assigner-id <id>', 'Assignee user ID')
+    .option('--input <text>', 'Search by case name')
+    .option('--page <n>', 'Page number', '1')
+    .option('--page-size <n>', 'Page size', '20')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.casesList({
+        pageNo: Number.parseInt(opts.page, 10),
+        pageSize: Number.parseInt(opts.pageSize, 10),
+        groupId: opts.groupId ? Number.parseInt(opts.groupId, 10) : undefined,
+        status: opts.status,
+        priority: opts.priority,
+        assignerId: opts.assignerId
+          ? Number.parseInt(opts.assignerId, 10)
+          : undefined,
+        input: opts.input,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  cases
+    .command('create')
+    .description('Create a case')
+    .requiredOption('--name <name>', 'Case name')
+    .requiredOption('--group-id <id>', 'Case group ID')
+    .option('-p, --priority <priority>', 'NONE, P0, P1, or P2')
+    .option('-s, --status <status>', 'todo, doing, or done')
+    .option('--assigner-id <id>', 'Assignee user ID')
+    .option('--description <text>', 'Case description')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.caseCreate({
+        name: opts.name,
+        groupId: Number.parseInt(opts.groupId, 10),
+        priority: opts.priority,
+        status: opts.status,
+        assignerId: opts.assignerId
+          ? Number.parseInt(opts.assignerId, 10)
+          : undefined,
+        description: opts.description,
+      });
+      if (data) printOutput(data, opts.output as OutputFormat);
+    });
+
+  cases
+    .command('detail')
+    .description('Get case detail by ID')
+    .argument('<id>', 'Case ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const data = await client.caseDetail(Number.parseInt(id, 10));
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  cases
+    .command('detail-key')
+    .description('Get case detail by CaseKey')
+    .argument('<caseKey>', 'Case key')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (caseKey, opts) => {
+      const client = getClient();
+      const data = await client.caseDetailByKey(caseKey);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  cases
+    .command('update')
+    .description('Update a case')
+    .argument('<id>', 'Case ID')
+    .option('--group-id <id>', 'Case group ID')
+    .option('-p, --priority <priority>', 'NONE, P0, P1, or P2')
+    .option('-s, --status <status>', 'todo, doing, or done')
+    .option('--assigner-id <id>', 'Assignee user ID')
+    .option('--description <text>', 'Case description')
+    .action(async (id, opts) => {
+      const client = getClient();
+      await client.caseUpdate(Number.parseInt(id, 10), {
+        groupId: opts.groupId ? Number.parseInt(opts.groupId, 10) : undefined,
+        priority: opts.priority,
+        status: opts.status,
+        assignerId: opts.assignerId
+          ? Number.parseInt(opts.assignerId, 10)
+          : undefined,
+        description: opts.description,
+      });
+      console.log('Case updated');
+    });
+
+  cases
+    .command('delete')
+    .description('Delete a case')
+    .argument('<id>', 'Case ID')
+    .action(async (id) => {
+      const client = getClient();
+      await client.caseDelete(Number.parseInt(id, 10));
+      console.log('Case deleted');
+    });
+
+  cases
+    .command('link')
+    .description('Link an alert or issue to a case')
+    .argument('<id>', 'Case ID')
+    .requiredOption('--type <type>', 'Relation type: alert or issue')
+    .requiredOption('--target-id <id>', 'Alert ID or Issue ID')
+    .action(async (id, opts) => {
+      const client = getClient();
+      await client.caseAddRelation(Number.parseInt(id, 10), {
+        type: opts.type,
+        targetId: opts.targetId,
+      });
+      console.log('Case relation added');
+    });
+
+  cases
+    .command('unlink')
+    .description('Remove a case relation')
+    .argument('<id>', 'Case ID')
+    .argument('<relationId>', 'Relation ID')
+    .action(async (id, relationId) => {
+      const client = getClient();
+      await client.caseDeleteRelation(
+        Number.parseInt(id, 10),
+        Number.parseInt(relationId, 10)
+      );
+      console.log('Case relation removed');
+    });
+
+  cases
+    .command('note')
+    .description('Add a case note')
+    .argument('<id>', 'Case ID')
+    .requiredOption('--text <text>', 'Note text')
+    .action(async (id, opts) => {
+      const client = getClient();
+      await client.caseAddNote(Number.parseInt(id, 10), opts.text);
+      console.log('Case note added');
+    });
+
+  cases
+    .command('note-update')
+    .description('Update a case note')
+    .argument('<id>', 'Case ID')
+    .argument('<noteId>', 'Note ID')
+    .requiredOption('--text <text>', 'Note text')
+    .action(async (id, noteId, opts) => {
+      const client = getClient();
+      await client.caseUpdateNote(
+        Number.parseInt(id, 10),
+        Number.parseInt(noteId, 10),
+        opts.text
+      );
+      console.log('Case note updated');
+    });
+
+  cases
+    .command('groups')
+    .description('List case groups')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.caseGroupsAll();
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  cases
+    .command('group-create')
+    .description('Create a case group')
+    .requiredOption('--name <name>', 'Case group name')
+    .action(async (opts) => {
+      const client = getClient();
+      await client.caseGroupCreate({ name: opts.name });
+      console.log('Case group created');
+    });
+
   // ─── trace ───────────────────────────────────────────────
   const trace = program.command('trace').description('Trace operations');
 
