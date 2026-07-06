@@ -56,7 +56,7 @@ describe('commands', () => {
       issueIds: ['ISSUE-1'],
       status: 'ignored',
       ignoreRule: {
-        type: 'TIME',
+        type: 'time',
         timeRule: { endTime: 1785542399000 },
       },
     });

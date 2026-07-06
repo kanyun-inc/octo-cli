@@ -117,7 +117,7 @@ describe('MCP tools', () => {
         status: 'ignored',
         dataSource: 'log',
         ignoreRule: {
-          type: 'USER_COUNT',
+          type: 'userCount',
           userRule: {
             userCount: 50,
             timestamp: 1751760000000,
@@ -135,7 +135,7 @@ describe('MCP tools', () => {
       issueIds: ['ISSUE-1'],
       status: 'ignored',
       ignoreRule: {
-        type: 'USER_COUNT',
+        type: 'userCount',
         userRule: {
           userCount: 50,
           timestamp: 1751760000000,
@@ -155,7 +155,7 @@ describe('MCP tools', () => {
         {
           issueIds: ['ISSUE-1'],
           status: 'resolved',
-          ignoreRule: { type: 'TIME', timeRule: { endTime: 1785542399000 } },
+          ignoreRule: { type: 'time', timeRule: { endTime: 1785542399000 } },
         },
         client
       )
@@ -179,7 +179,7 @@ describe('MCP tools', () => {
         {
           issueIds: ['ISSUE-1'],
           status: 'ignored',
-          ignoreRule: { type: 'TIME', timeRule: {} },
+          ignoreRule: { type: 'time', timeRule: {} },
         },
         client
       )
@@ -204,7 +204,7 @@ describe('MCP tools', () => {
           issueIds: ['ISSUE-1'],
           status: 'ignored',
           ignoreRule: {
-            type: 'TIME',
+            type: 'time',
             timeRule: { endTime: 1785542399000 },
             appearRule: { appearCount: 3 },
           },
@@ -228,7 +228,7 @@ describe('MCP tools', () => {
           issueIds: ['ISSUE-1'],
           status: 'ignored',
           ignoreRule: {
-            type: 'APPEAR_COUNT',
+            type: 'appearCount',
             appearRule: { appearCount: 3 },
             userRule: { userCount: 2, userField: 'uid' },
           },
@@ -252,7 +252,7 @@ describe('MCP tools', () => {
           issueIds: ['ISSUE-1'],
           status: 'ignored',
           ignoreRule: {
-            type: 'USER_COUNT',
+            type: 'userCount',
             userRule: { userCount: 2, userField: 'uid' },
             timeRule: { endTime: 1785542399000 },
           },

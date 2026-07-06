@@ -158,7 +158,7 @@ function validateIssueIgnoreRuleArgs(
   }
 
   const rule = ignoreRule as {
-    type?: string;
+    type?: 'time' | 'appearCount' | 'userCount';
     timeRule?: { endTime?: number };
     appearRule?: {
       appearCount?: number;
@@ -177,7 +177,7 @@ function validateIssueIgnoreRuleArgs(
     throw new Error('ignoreRule.type is required');
   }
 
-  if (rule.type === 'TIME') {
+  if (rule.type === 'time') {
     validateRuleAbsence(rule as Record<string, unknown>, 'appearRule', 'TIME');
     validateRuleAbsence(rule as Record<string, unknown>, 'userRule', 'TIME');
     if (typeof rule.timeRule?.endTime !== 'number') {
@@ -186,7 +186,7 @@ function validateIssueIgnoreRuleArgs(
     return ignoreRule;
   }
 
-  if (rule.type === 'APPEAR_COUNT') {
+  if (rule.type === 'appearCount') {
     validateRuleAbsence(
       rule as Record<string, unknown>,
       'timeRule',
@@ -205,7 +205,7 @@ function validateIssueIgnoreRuleArgs(
     return ignoreRule;
   }
 
-  if (rule.type === 'USER_COUNT') {
+  if (rule.type === 'userCount') {
     validateRuleAbsence(
       rule as Record<string, unknown>,
       'timeRule',
@@ -586,7 +586,7 @@ export function getMcpTools() {
             properties: {
               type: {
                 type: 'string',
-                enum: ['TIME', 'APPEAR_COUNT', 'USER_COUNT'],
+                enum: ['time', 'appearCount', 'userCount'],
               },
               timeRule: {
                 type: 'object',

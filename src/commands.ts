@@ -13,9 +13,9 @@ import { printOutput } from './output.js';
 import { resolveTimeRange } from './time.js';
 
 type IssueIgnoreRulePayload =
-  | { type: 'TIME'; timeRule: { endTime: number } }
+  | { type: 'time'; timeRule: { endTime: number } }
   | {
-      type: 'APPEAR_COUNT';
+      type: 'appearCount';
       appearRule: {
         appearCount: number;
         timestamp?: number;
@@ -23,7 +23,7 @@ type IssueIgnoreRulePayload =
       };
     }
   | {
-      type: 'USER_COUNT';
+      type: 'userCount';
       userRule: {
         userCount: number;
         timestamp?: number;
@@ -145,7 +145,7 @@ function buildIssueIgnoreRuleFromOpts(
       );
     }
     return {
-      type: 'TIME',
+      type: 'time',
       timeRule: {
         endTime: parseEpochMsOrIso(opts.ignoreEndTime, '--ignore-end-time'),
       },
@@ -164,7 +164,7 @@ function buildIssueIgnoreRuleFromOpts(
       );
     }
     return {
-      type: 'APPEAR_COUNT',
+      type: 'appearCount',
       appearRule: {
         appearCount: parseNumericFlag(opts.appearCount, '--appear-count'),
         timestamp: opts.startTimestamp
@@ -192,7 +192,7 @@ function buildIssueIgnoreRuleFromOpts(
   }
 
   return {
-    type: 'USER_COUNT',
+    type: 'userCount',
     userRule: {
       userCount: parseNumericFlag(opts.userCount, '--user-count'),
       timestamp: opts.startTimestamp
