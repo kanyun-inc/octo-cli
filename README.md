@@ -219,6 +219,25 @@ octo-cli issues search --status unresolved -l 1h         # 未解决的 Issue
 octo-cli issues detail <issueId>                          # Issue 详情
 octo-cli issues assign --user 123 --ids id1,id2          # 分配 Issue
 octo-cli issues update --ids id1,id2 -s resolved          # 解决 Issue
+octo-cli issues update --ids id1,id2 -s ignored \
+  --ignore-type TIME \
+  --ignore-end-time 2026-07-31T23:59:59Z              # 忽略到指定时间
+
+octo-cli issues update --ids id1,id2 -s ignored \
+  --ignore-type APPEAR_COUNT \
+  --appear-count 100 \
+  --start-timestamp 2026-07-06T00:00:00Z \
+  --time-window-ms 3600000                            # 在时间窗口内按发生次数忽略
+
+octo-cli issues update --ids id1,id2 -s ignored \
+  --source log \
+  --ignore-type USER_COUNT \
+  --user-count 50 \
+  --user-field uid \
+  --start-timestamp 2026-07-06T00:00:00Z \
+  --time-window-ms 3600000                            # 在时间窗口内按影响用户数忽略
+
+octo-cli issues update --ids id1,id2 -s unresolved       # 取消忽略
 ```
 
 ### Case

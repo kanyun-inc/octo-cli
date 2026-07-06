@@ -121,6 +121,117 @@ function parsePointInTime(value: unknown): number {
   return new Date(text).getTime();
 }
 
+function validateRuleAbsence(
+  rule: Record<string, unknown>,
+  field: 'timeRule' | 'appearRule' | 'userRule',
+  type: string
+): void {
+  if (rule[field] !== undefined) {
+    throw new Error(`ignoreRule.${field} is not allowed for ${type}`);
+  }
+}
+
+function validateIssueIgnoreRuleArgs(
+  args: Record<string, unknown>
+): unknown | undefined {
+  const status = String(args.status);
+  const dataSource = String(args.dataSource ?? 'log');
+  const ignoreRule = args.ignoreRule;
+
+  if (status !== 'ignored') {
+    if (ignoreRule !== undefined) {
+      throw new Error('ignoreRule is only allowed when status is ignored');
+    }
+    return undefined;
+  }
+
+  if (ignoreRule === undefined) {
+    return undefined;
+  }
+
+  if (
+    !ignoreRule ||
+    typeof ignoreRule !== 'object' ||
+    Array.isArray(ignoreRule)
+  ) {
+    throw new Error('ignoreRule must be an object');
+  }
+
+  const rule = ignoreRule as {
+    type?: string;
+    timeRule?: { endTime?: number };
+    appearRule?: {
+      appearCount?: number;
+      timestamp?: number;
+      timeWindow?: number;
+    };
+    userRule?: {
+      userCount?: number;
+      timestamp?: number;
+      timeWindow?: number;
+      userField?: string;
+    };
+  };
+
+  if (!rule.type) {
+    throw new Error('ignoreRule.type is required');
+  }
+
+  if (rule.type === 'TIME') {
+    validateRuleAbsence(rule as Record<string, unknown>, 'appearRule', 'TIME');
+    validateRuleAbsence(rule as Record<string, unknown>, 'userRule', 'TIME');
+    if (typeof rule.timeRule?.endTime !== 'number') {
+      throw new Error('ignoreRule.timeRule.endTime is required for TIME');
+    }
+    return ignoreRule;
+  }
+
+  if (rule.type === 'APPEAR_COUNT') {
+    validateRuleAbsence(
+      rule as Record<string, unknown>,
+      'timeRule',
+      'APPEAR_COUNT'
+    );
+    validateRuleAbsence(
+      rule as Record<string, unknown>,
+      'userRule',
+      'APPEAR_COUNT'
+    );
+    if (!rule.appearRule?.appearCount) {
+      throw new Error(
+        'ignoreRule.appearRule.appearCount is required for APPEAR_COUNT'
+      );
+    }
+    return ignoreRule;
+  }
+
+  if (rule.type === 'USER_COUNT') {
+    validateRuleAbsence(
+      rule as Record<string, unknown>,
+      'timeRule',
+      'USER_COUNT'
+    );
+    validateRuleAbsence(
+      rule as Record<string, unknown>,
+      'appearRule',
+      'USER_COUNT'
+    );
+    if (!rule.userRule?.userCount) {
+      throw new Error(
+        'ignoreRule.userRule.userCount is required for USER_COUNT'
+      );
+    }
+    if (dataSource === 'log' && !rule.userRule.userField) {
+      throw new Error(
+        'ignoreRule.userRule.userField is required for USER_COUNT when dataSource is log'
+      );
+    }
+    return ignoreRule;
+  }
+
+  throw new Error(`unsupported ignoreRule.type: ${rule.type}`);
+}
+
 export function getMcpTools() {
   return [
     {
@@ -468,6 +579,39 @@ export function getMcpTools() {
           dataSource: {
             type: 'string',
             description: 'Data source: log or rum (default log)',
+          },
+          ignoreRule: {
+            type: 'object',
+            description: 'Optional ignore rule when status is ignored',
+            properties: {
+              type: {
+                type: 'string',
+                enum: ['TIME', 'APPEAR_COUNT', 'USER_COUNT'],
+              },
+              timeRule: {
+                type: 'object',
+                properties: {
+                  endTime: { type: 'number' },
+                },
+              },
+              appearRule: {
+                type: 'object',
+                properties: {
+                  appearCount: { type: 'number' },
+                  timestamp: { type: 'number' },
+                  timeWindow: { type: 'number' },
+                },
+              },
+              userRule: {
+                type: 'object',
+                properties: {
+                  userCount: { type: 'number' },
+                  timestamp: { type: 'number' },
+                  timeWindow: { type: 'number' },
+                  userField: { type: 'string' },
+                },
+              },
+            },
           },
         },
         required: ['issueIds', 'status'],
@@ -1025,6 +1169,7 @@ export async function handleMcpTool(
           env: String(args.env ?? getDefaultEnv()),
           issueIds: args.issueIds as string[],
           status: String(args.status),
+          ignoreRule: validateIssueIgnoreRuleArgs(args),
         });
         return ok('Issues updated');
       }

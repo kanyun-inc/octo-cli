@@ -105,6 +105,171 @@ describe('MCP tools', () => {
     });
   });
 
+  it('dispatches issue update with USER_COUNT ignoreRule', async () => {
+    vi.stubEnv('OCTOPUS_ENV', 'default-env');
+    const client = testClient();
+    const calls = captureFetch();
+
+    await handleMcpTool(
+      'octo_issues_update',
+      {
+        issueIds: ['ISSUE-1'],
+        status: 'ignored',
+        dataSource: 'log',
+        ignoreRule: {
+          type: 'USER_COUNT',
+          userRule: {
+            userCount: 50,
+            timestamp: 1751760000000,
+            timeWindow: 3600000,
+            userField: 'uid',
+          },
+        },
+      },
+      client
+    );
+
+    expect(JSON.parse(calls[0].body)).toEqual({
+      dataSource: 'log',
+      env: 'default-env',
+      issueIds: ['ISSUE-1'],
+      status: 'ignored',
+      ignoreRule: {
+        type: 'USER_COUNT',
+        userRule: {
+          userCount: 50,
+          timestamp: 1751760000000,
+          timeWindow: 3600000,
+          userField: 'uid',
+        },
+      },
+    });
+  });
+
+  it('rejects ignoreRule when status is resolved', async () => {
+    const client = testClient();
+
+    await expect(
+      handleMcpTool(
+        'octo_issues_update',
+        {
+          issueIds: ['ISSUE-1'],
+          status: 'resolved',
+          ignoreRule: { type: 'TIME', timeRule: { endTime: 1785542399000 } },
+        },
+        client
+      )
+    ).resolves.toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: ignoreRule is only allowed when status is ignored',
+        },
+      ],
+      isError: true,
+    });
+  });
+
+  it('rejects TIME ignoreRule without endTime', async () => {
+    const client = testClient();
+
+    await expect(
+      handleMcpTool(
+        'octo_issues_update',
+        {
+          issueIds: ['ISSUE-1'],
+          status: 'ignored',
+          ignoreRule: { type: 'TIME', timeRule: {} },
+        },
+        client
+      )
+    ).resolves.toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: ignoreRule.timeRule.endTime is required for TIME',
+        },
+      ],
+      isError: true,
+    });
+  });
+
+  it('rejects ignoreRule payloads that mix type-specific sub rules', async () => {
+    const client = testClient();
+
+    await expect(
+      handleMcpTool(
+        'octo_issues_update',
+        {
+          issueIds: ['ISSUE-1'],
+          status: 'ignored',
+          ignoreRule: {
+            type: 'TIME',
+            timeRule: { endTime: 1785542399000 },
+            appearRule: { appearCount: 3 },
+          },
+        },
+        client
+      )
+    ).resolves.toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: ignoreRule.appearRule is not allowed for TIME',
+        },
+      ],
+      isError: true,
+    });
+
+    await expect(
+      handleMcpTool(
+        'octo_issues_update',
+        {
+          issueIds: ['ISSUE-1'],
+          status: 'ignored',
+          ignoreRule: {
+            type: 'APPEAR_COUNT',
+            appearRule: { appearCount: 3 },
+            userRule: { userCount: 2, userField: 'uid' },
+          },
+        },
+        client
+      )
+    ).resolves.toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: ignoreRule.userRule is not allowed for APPEAR_COUNT',
+        },
+      ],
+      isError: true,
+    });
+
+    await expect(
+      handleMcpTool(
+        'octo_issues_update',
+        {
+          issueIds: ['ISSUE-1'],
+          status: 'ignored',
+          ignoreRule: {
+            type: 'USER_COUNT',
+            userRule: { userCount: 2, userField: 'uid' },
+            timeRule: { endTime: 1785542399000 },
+          },
+        },
+        client
+      )
+    ).resolves.toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: ignoreRule.timeRule is not allowed for USER_COUNT',
+        },
+      ],
+      isError: true,
+    });
+  });
+
   it('dispatches trace aggregate and metrics point tools', async () => {
     const client = testClient();
     const calls = captureFetch();

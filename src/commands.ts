@@ -12,6 +12,200 @@ import {
 import { printOutput } from './output.js';
 import { resolveTimeRange } from './time.js';
 
+type IssueIgnoreRulePayload =
+  | { type: 'TIME'; timeRule: { endTime: number } }
+  | {
+      type: 'APPEAR_COUNT';
+      appearRule: {
+        appearCount: number;
+        timestamp?: number;
+        timeWindow?: number;
+      };
+    }
+  | {
+      type: 'USER_COUNT';
+      userRule: {
+        userCount: number;
+        timestamp?: number;
+        timeWindow?: number;
+        userField?: string;
+      };
+    };
+
+type IssueUpdateOptions = {
+  ids: string;
+  status: string;
+  env?: string;
+  source: 'log' | 'rum';
+  ignoreType?: 'TIME' | 'APPEAR_COUNT' | 'USER_COUNT';
+  ignoreEndTime?: string;
+  appearCount?: string;
+  userCount?: string;
+  userField?: string;
+  startTimestamp?: string;
+  timeWindowMs?: string;
+};
+
+function parseEpochMsOrIso(value: string, flagName: string): number {
+  if (/^\d+$/.test(value)) {
+    return Number.parseInt(value, 10);
+  }
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    throw new Error(
+      `${flagName} must be epoch milliseconds or an ISO timestamp`
+    );
+  }
+  return parsed;
+}
+
+function parseNumericFlag(value: string, flagName: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${flagName} must be a valid number`);
+  }
+  return parsed;
+}
+
+function parseIssueSource(value: string): 'log' | 'rum' {
+  if (value === 'log' || value === 'rum') {
+    return value;
+  }
+  throw new Error('--source must be one of: log, rum');
+}
+
+function parseIgnoreType(
+  value: string
+): 'TIME' | 'APPEAR_COUNT' | 'USER_COUNT' {
+  if (value === 'TIME' || value === 'APPEAR_COUNT' || value === 'USER_COUNT') {
+    return value;
+  }
+  throw new Error(
+    '--ignore-type must be one of: TIME, APPEAR_COUNT, USER_COUNT'
+  );
+}
+
+function assertNoIgnoreRuleArgs(opts: IssueUpdateOptions): void {
+  if (
+    opts.ignoreType ||
+    opts.ignoreEndTime ||
+    opts.appearCount ||
+    opts.userCount ||
+    opts.userField ||
+    opts.startTimestamp ||
+    opts.timeWindowMs
+  ) {
+    throw new Error(
+      'ignore rule arguments are only allowed when --status ignored'
+    );
+  }
+}
+
+function buildIssueIgnoreRuleFromOpts(
+  opts: IssueUpdateOptions
+): IssueIgnoreRulePayload | undefined {
+  const hasRuleArg = Boolean(
+    opts.ignoreType ||
+      opts.ignoreEndTime ||
+      opts.appearCount ||
+      opts.userCount ||
+      opts.userField ||
+      opts.startTimestamp ||
+      opts.timeWindowMs
+  );
+
+  if (opts.status !== 'ignored') {
+    assertNoIgnoreRuleArgs(opts);
+    return undefined;
+  }
+
+  if (!hasRuleArg) {
+    return undefined;
+  }
+
+  if (!opts.ignoreType) {
+    throw new Error(
+      '--ignore-type is required when passing ignore rule arguments'
+    );
+  }
+
+  if (opts.ignoreType === 'TIME') {
+    if (!opts.ignoreEndTime) {
+      throw new Error('--ignore-end-time is required when --ignore-type TIME');
+    }
+    if (
+      opts.appearCount ||
+      opts.userCount ||
+      opts.userField ||
+      opts.startTimestamp ||
+      opts.timeWindowMs
+    ) {
+      throw new Error(
+        'TIME ignore rule does not allow appear/user count arguments'
+      );
+    }
+    return {
+      type: 'TIME',
+      timeRule: {
+        endTime: parseEpochMsOrIso(opts.ignoreEndTime, '--ignore-end-time'),
+      },
+    };
+  }
+
+  if (opts.ignoreType === 'APPEAR_COUNT') {
+    if (!opts.appearCount) {
+      throw new Error(
+        '--appear-count is required when --ignore-type APPEAR_COUNT'
+      );
+    }
+    if (opts.ignoreEndTime || opts.userCount || opts.userField) {
+      throw new Error(
+        'APPEAR_COUNT ignore rule only accepts appear-count and window arguments'
+      );
+    }
+    return {
+      type: 'APPEAR_COUNT',
+      appearRule: {
+        appearCount: parseNumericFlag(opts.appearCount, '--appear-count'),
+        timestamp: opts.startTimestamp
+          ? parseEpochMsOrIso(opts.startTimestamp, '--start-timestamp')
+          : undefined,
+        timeWindow: opts.timeWindowMs
+          ? parseNumericFlag(opts.timeWindowMs, '--time-window-ms')
+          : undefined,
+      },
+    };
+  }
+
+  if (!opts.userCount) {
+    throw new Error('--user-count is required when --ignore-type USER_COUNT');
+  }
+  if (opts.ignoreEndTime || opts.appearCount) {
+    throw new Error(
+      'USER_COUNT ignore rule does not allow TIME or APPEAR_COUNT arguments'
+    );
+  }
+  if (opts.source === 'log' && !opts.userField) {
+    throw new Error(
+      '--user-field is required when --ignore-type USER_COUNT and --source log'
+    );
+  }
+
+  return {
+    type: 'USER_COUNT',
+    userRule: {
+      userCount: parseNumericFlag(opts.userCount, '--user-count'),
+      timestamp: opts.startTimestamp
+        ? parseEpochMsOrIso(opts.startTimestamp, '--start-timestamp')
+        : undefined,
+      timeWindow: opts.timeWindowMs
+        ? parseNumericFlag(opts.timeWindowMs, '--time-window-ms')
+        : undefined,
+      userField: opts.userField,
+    },
+  };
+}
+
 function getClient(): OctoClient {
   const credentials = getCredentials();
   return new OctoClient(getBaseUrl(), credentials);
@@ -392,14 +586,46 @@ export function registerCommands(program: Command): void {
     .requiredOption('--ids <ids>', 'Comma-separated issue IDs')
     .requiredOption('-s, --status <status>', 'unresolved, resolved, or ignored')
     .option('-e, --env <env>', 'Environment')
-    .option('--source <src>', 'Data source: log or rum', 'log')
-    .action(async (opts) => {
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
+    .option(
+      '--ignore-type <type>',
+      'TIME, APPEAR_COUNT, or USER_COUNT',
+      parseIgnoreType
+    )
+    .option(
+      '--ignore-end-time <time>',
+      'Epoch ms or ISO timestamp for TIME ignore rule'
+    )
+    .option(
+      '--appear-count <n>',
+      'Threshold count for APPEAR_COUNT ignore rule'
+    )
+    .option('--user-count <n>', 'Threshold count for USER_COUNT ignore rule')
+    .option(
+      '--user-field <field>',
+      'User field name for USER_COUNT ignore rule'
+    )
+    .option(
+      '--start-timestamp <time>',
+      'Epoch ms or ISO timestamp for threshold rules'
+    )
+    .option(
+      '--time-window-ms <ms>',
+      'Window size in milliseconds for threshold rules'
+    )
+    .action(async (opts: IssueUpdateOptions) => {
       const client = getClient();
       await client.issuesBatchUpdate({
         dataSource: opts.source,
         env: opts.env ?? getDefaultEnv(),
         issueIds: opts.ids.split(','),
         status: opts.status,
+        ignoreRule: buildIssueIgnoreRuleFromOpts(opts),
       });
       console.log('Issues updated');
     });
