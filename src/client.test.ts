@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OctoClient } from './client.js';
+import { generateAuthorizationHeader } from './auth.js';
+import { normalizeAlertScope, OctoClient } from './client.js';
 
 // Intercept fetch to capture request details
 function captureFetch() {
@@ -181,8 +182,10 @@ describe('OctoClient alert methods', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0].method).toBe('GET');
+    // Query parameters are emitted sorted to match the signature's canonical
+    // form; the unsorted order this previously asserted returns 401.
     expect(calls[0].url).toBe(
-      'https://example.com/infra-octopus-openapi/v1/alerts/42/timeseries?from=1000&to=2000&conditionId=3'
+      'https://example.com/infra-octopus-openapi/v1/alerts/42/timeseries?conditionId=3&from=1000&to=2000'
     );
     vi.restoreAllMocks();
   });
@@ -224,7 +227,7 @@ describe('OctoClient alert methods', () => {
       alertId: 200,
       startTime: 1000,
       endTime: 2000,
-      scope: 'ALL',
+      scope: 'all',
       silentlyNotify: false,
     });
 
@@ -232,7 +235,223 @@ describe('OctoClient alert methods', () => {
     const body = JSON.parse(calls[0].body);
     expect(body.ruleId).toBe(100);
     expect(body.alertId).toBe(200);
-    expect(body.scope).toBe('ALL');
+    // The backend rejects uppercase "ALL" with 400 "静默范围不能为空".
+    expect(body.scope).toBe('all');
+    vi.restoreAllMocks();
+  });
+
+  it('alertRulesSearch sends plural envs/priorities, never the singular form', async () => {
+    const calls = captureFetch();
+    await client.alertRulesSearch({
+      groupId: -1,
+      envs: ['online'],
+      priorities: ['P0', 'P1'],
+      pageParam: { pageNo: 1, pageSize: 20 },
+    });
+
+    const body = JSON.parse(calls[0].body);
+    expect(body.envs).toEqual(['online']);
+    expect(body.priorities).toEqual(['P0', 'P1']);
+    // Singular keys are silently ignored by the backend, returning unfiltered
+    // results — they must never be sent.
+    expect(body.env).toBeUndefined();
+    expect(body.priority).toBeUndefined();
+    vi.restoreAllMocks();
+  });
+
+  it('alertsSearch forwards alertRuleType and pageNo', async () => {
+    const calls = captureFetch();
+    await client.alertsSearch({
+      from: 1,
+      to: 2,
+      alertRuleType: 'metric',
+      pageNo: 3,
+    });
+
+    const body = JSON.parse(calls[0].body);
+    expect(body.alertRuleType).toBe('metric');
+    expect(body.pageNo).toBe(3);
+    vi.restoreAllMocks();
+  });
+
+  it('alertRuleDisableCreate posts to the disables endpoint', async () => {
+    const calls = captureFetch();
+    await client.alertRuleDisableCreate({
+      ruleId: 12345,
+      startTime: 1000,
+      endTime: 2000,
+      scope: 'specify',
+      specifyGroups: { service: ['a', 'b'] },
+      disableNotifyContent: 'maintenance',
+    });
+
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/create'
+    );
+    const body = JSON.parse(calls[0].body);
+    expect(body.ruleId).toBe(12345);
+    expect(body.scope).toBe('specify');
+    expect(body.specifyGroups).toEqual({ service: ['a', 'b'] });
+    expect(body.disableNotifyContent).toBe('maintenance');
+    // A disable targets the rule itself, so it carries no alertId.
+    expect(body.alertId).toBeUndefined();
+    vi.restoreAllMocks();
+  });
+
+  it('alertRuleDisableList reads by rule id', async () => {
+    const calls = captureFetch();
+    await client.alertRuleDisableList(12345);
+
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/12345'
+    );
+    vi.restoreAllMocks();
+  });
+
+  it('alertRuleDisableDelete deletes by disable id', async () => {
+    const calls = captureFetch();
+    await client.alertRuleDisableDelete(1001);
+
+    expect(calls[0].method).toBe('DELETE');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/1001'
+    );
+    vi.restoreAllMocks();
+  });
+});
+
+describe('normalizeAlertScope', () => {
+  it('accepts the canonical lowercase values', () => {
+    expect(normalizeAlertScope('all')).toBe('all');
+    expect(normalizeAlertScope('specify')).toBe('specify');
+  });
+
+  it('downcases the legacy uppercase spelling older CLI versions sent', () => {
+    expect(normalizeAlertScope('ALL')).toBe('all');
+    expect(normalizeAlertScope('SPECIFY')).toBe('specify');
+    expect(normalizeAlertScope(' Specify ')).toBe('specify');
+  });
+
+  it('defaults to all when omitted', () => {
+    expect(normalizeAlertScope(undefined)).toBe('all');
+  });
+
+  it('rejects unknown scopes instead of forwarding them to the API', () => {
+    expect(() => normalizeAlertScope('everything')).toThrow(/Invalid scope/);
+  });
+});
+
+describe('OctoClient request signing', () => {
+  const client = new OctoClient('https://example.com', {
+    mode: 'appKey',
+    appId: 'testId',
+    appSecret: 'testSecret',
+  });
+
+  it('sorts query parameters in the request URL', async () => {
+    const calls = captureFetch();
+    await client.alertTimeseries({
+      alertId: 999,
+      from: 1716799000000,
+      to: 1716800000000,
+      conditionId: 0,
+    });
+
+    // The backend verifies the signature against a canonical (sorted) query
+    // string, so the query is emitted in sorted order: conditionId, from, to.
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alerts/999/timeseries' +
+        '?conditionId=0&from=1716799000000&to=1716800000000'
+    );
+    vi.restoreAllMocks();
+  });
+
+  it('signs path and query separately so query order does not change the signature', async () => {
+    // Freeze time so the timestamp inside the Authorization header is stable
+    // and the two signatures are directly comparable.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-22T00:00:00Z'));
+    const calls = captureFetch();
+    await client.get(
+      '/infra-octopus-openapi/v1/alerts/1/timeseries?to=2&from=1'
+    );
+    await client.get(
+      '/infra-octopus-openapi/v1/alerts/1/timeseries?from=1&to=2'
+    );
+
+    expect(calls[0].url).toBe(calls[1].url);
+    expect(calls[0].url).toContain('?from=1&to=2');
+    // Asserting the header itself, not just the URL: signing the raw
+    // `path?query` string produced a valid-looking URL but a 401 signature.
+    expect(calls[0].headers.Authorization).toBe(calls[1].headers.Authorization);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('signs the canonical query, not the raw path?query string', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-22T00:00:00Z'));
+    const calls = captureFetch();
+    await client.get(
+      '/infra-octopus-openapi/v1/alerts/1/timeseries?to=2&from=1'
+    );
+
+    const expected = generateAuthorizationHeader(
+      'testId',
+      'testSecret',
+      'GET',
+      '/infra-octopus-openapi/v1/alerts/1/timeseries',
+      'from=1&to=2',
+      ''
+    );
+    expect(calls[0].headers.Authorization).toBe(expected);
+
+    // The pre-fix form — whole URL as path, empty query — must NOT match.
+    const brokenForm = generateAuthorizationHeader(
+      'testId',
+      'testSecret',
+      'GET',
+      '/infra-octopus-openapi/v1/alerts/1/timeseries?to=2&from=1',
+      '',
+      ''
+    );
+    expect(calls[0].headers.Authorization).not.toBe(brokenForm);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('sorts query by key, not by the raw key=value pair', async () => {
+    const calls = captureFetch();
+    // Sorting raw pairs would yield `a1=1&a=2` because "1" < "=" in ASCII.
+    await client.get('/x?a=2&a1=1');
+
+    expect(calls[0].url).toBe('https://example.com/x?a=2&a1=1');
+    vi.restoreAllMocks();
+  });
+
+  it('keeps repeated keys in their original relative order', async () => {
+    const calls = captureFetch();
+    await client.get('/x?b=1&a=2&a=1');
+
+    expect(calls[0].url).toBe('https://example.com/x?a=2&a=1&b=1');
+    vi.restoreAllMocks();
+  });
+
+  it('keeps a zero body instead of dropping it as falsy', async () => {
+    const calls = captureFetch();
+    await client.del('/infra-octopus-openapi/v1/alert/rules', 0);
+
+    expect(calls[0].body).toBe('0');
+    vi.restoreAllMocks();
+  });
+
+  it('sends no body when there is none', async () => {
+    const calls = captureFetch();
+    await client.get('/infra-octopus-openapi/v1/alerts/1');
+
+    expect(calls[0].body).toBe('');
     vi.restoreAllMocks();
   });
 });

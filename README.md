@@ -203,13 +203,24 @@ octo-cli logs aggregate -a "*:count" -g level:5 -l 30m   # 按 level 聚合 Top 
 ### 告警
 
 ```bash
-octo-cli alerts search -s firing -p P0,P1 -l 1h         # 正在触发的 P0/P1 告警
-octo-cli alerts search --service myapp -s all             # 某个服务的所有告警
+octo-cli alerts search -s firing -p P0,P1 -l 1h           # 正在触发的 P0/P1 告警
+octo-cli alerts search --service myapp                    # 某个服务的所有告警（不传 -s 即全部状态）
+octo-cli alerts search --rule-type metric -l 1h           # 只看指标类告警
+octo-cli alerts detail <alertId>                          # 告警详情（含触发规则与维度）
+octo-cli alerts timeseries <alertId> -l 1h                # 告警检测时序数据
 octo-cli alerts rules --group-id 123                      # 搜索告警规则
+octo-cli alerts rules -e online -p P0,P1                  # 按环境/优先级过滤规则
 octo-cli alerts create --file rule.json                   # 从 JSON 创建告警规则
 octo-cli alerts delete <ruleId>                           # 删除告警规则
-octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h  # 静默告警
-octo-cli alerts unsilence <ruleId>                        # 解除告警静默
+
+# 静默：只抑制某条已触发告警的通知
+octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h
+octo-cli alerts unsilence <ruleId>
+
+# 停用：让规则本身在时间段内不参与检测（不需要 alertId）
+octo-cli alerts disable --rule-id 1 --duration 2h --reason "节假日维护"
+octo-cli alerts disables <ruleId>                         # 查看该规则的停用记录
+octo-cli alerts enable <disableId>                        # 删除停用记录（传停用记录 id）
 ```
 
 ### 错误追踪 (Issue)
@@ -297,11 +308,16 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `logs search` | 搜索日志 |
 | `logs aggregate` | 日志聚合 |
 | `alerts search` | 搜索告警 |
+| `alerts detail` | 告警详情 |
+| `alerts timeseries` | 告警检测时序数据 |
 | `alerts rules` | 搜索告警规则 |
 | `alerts create` | 从 JSON 创建告警规则 |
 | `alerts delete` | 删除告警规则 |
-| `alerts silence` | 创建告警静默 |
+| `alerts silence` | 创建告警静默（抑制单条告警通知） |
 | `alerts unsilence` | 解除告警静默 |
+| `alerts disable` | 停用告警规则（规则本身不再检测） |
+| `alerts disables` | 查看规则的停用记录 |
+| `alerts enable` | 删除停用记录 |
 | `issues search` | 搜索错误追踪 Issue |
 | `issues detail` | Issue 详情 |
 | `issues assign` | 批量分配 Issue |
@@ -403,11 +419,16 @@ npx octo-cli mcp-install
 | `octo_logs_search` | 搜索日志 |
 | `octo_logs_aggregate` | 日志聚合 |
 | `octo_alerts_search` | 搜索告警 |
+| `octo_alerts_detail` | 告警详情 |
+| `octo_alerts_timeseries` | 告警检测时序数据 |
 | `octo_alerts_rules_search` | 搜索告警规则 |
 | `octo_alerts_rules_create` | 创建告警规则 |
 | `octo_alerts_rules_delete` | 删除告警规则 |
-| `octo_alerts_silence_create` | 创建告警静默 |
+| `octo_alerts_silence_create` | 创建告警静默（抑制单条告警通知） |
 | `octo_alerts_silence_delete` | 解除告警静默 |
+| `octo_alerts_rule_disable_create` | 停用告警规则（规则本身不再检测） |
+| `octo_alerts_rule_disable_list` | 查看规则的停用记录 |
+| `octo_alerts_rule_disable_delete` | 删除停用记录 |
 | `octo_issues_search` | 搜索错误追踪 Issue |
 | `octo_issues_detail` | Issue 详情 |
 | `octo_issues_assign` | 批量分配 Issue |
