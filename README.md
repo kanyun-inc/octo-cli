@@ -360,7 +360,7 @@ export OCTOPUS_EXTRA_HEADERS='{"X-Octopus-Tenant":"tenant-a"}'
 
 ## API 参考
 
-octo-cli 封装了 [Octopus OpenAPI](https://www.notion.so/OpenAPI-1b42090d16b681749335c62b3ed505be)，默认地址 `https://octopus-app.zhenguanyu.com`：
+octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguanyu.com`：
 
 | 领域 | 接口 |
 |------|------|
