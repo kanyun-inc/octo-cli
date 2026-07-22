@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 548" width="1200" height="548" role="img" aria-labelledby="archTitle archDesc">
+  <title id="archTitle">octo-cli 的三层结构：上下文、技能、工具</title>
+  <desc id="archDesc">第一层上下文记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，无需人工维护。第二层是 7 个领域技能，提供查询语法和排障流程，让 Agent 知道怎么查。第三层是 CLI 命令与 41 个 MCP 工具，Agent 有了前两层才能精准用对工具。</desc>
+
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="548" fill="#0d1117"/>
+
+  <!-- ============ layer 1: context ============ -->
+  <g>
+    <rect x="56" y="28" width="1088" height="148" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+    <rect x="56" y="28" width="5" height="148" rx="2.5" fill="#58a6ff"/>
+
+    <text class="mono" x="88" y="70" font-size="40" font-weight="700" fill="#58a6ff" opacity="0.32">01</text>
+    <text class="sans" x="88" y="112" font-size="30" font-weight="600" fill="#e6edf3">上下文</text>
+    <text class="mono" x="88" y="142" font-size="18" fill="#6e7681">.claude/rules/</text>
+
+    <line x1="268" y1="52" x2="268" y2="152" stroke="#21262d" stroke-width="1"/>
+
+    <text class="mono" x="300" y="72" font-size="20" fill="#c9d1d9">service X（test）· service Y（online）</text>
+    <text class="mono" x="300" y="102" font-size="20" fill="#8b949e">依赖 Redis · PostgreSQL · service Z，查询用 -e test</text>
+    <text class="sans" x="300" y="140" font-size="20" fill="#58a6ff">→ 排查时自动加载，Agent 知道<tspan font-weight="600">往哪看</tspan></text>
+
+    <line x1="936" y1="52" x2="936" y2="152" stroke="#21262d" stroke-width="1"/>
+    <text class="mono" x="1112" y="102" font-size="52" font-weight="700" fill="#58a6ff" text-anchor="end">0</text>
+    <text class="sans" x="1112" y="130" font-size="18" fill="#6e7681" text-anchor="end">人工维护</text>
+  </g>
+
+  <path d="M600 176 L600 190" stroke="#30363d" stroke-width="2"/>
+  <path d="M594 186 L600 194 L606 186" fill="none" stroke="#30363d" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- ============ layer 2: skills ============ -->
+  <g>
+    <rect x="56" y="200" width="1088" height="148" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+    <rect x="56" y="200" width="5" height="148" rx="2.5" fill="#a371f7"/>
+
+    <text class="mono" x="88" y="242" font-size="40" font-weight="700" fill="#a371f7" opacity="0.32">02</text>
+    <text class="sans" x="88" y="284" font-size="30" font-weight="600" fill="#e6edf3">技能</text>
+    <text class="mono" x="88" y="314" font-size="18" fill="#6e7681">Skill</text>
+
+    <line x1="268" y1="224" x2="268" y2="324" stroke="#21262d" stroke-width="1"/>
+
+    <text class="mono" x="300" y="244" font-size="20" fill="#c9d1d9">查询语法 · 指标 QL · RUM · LLM 追踪 · 数据采集</text>
+    <text class="mono" x="300" y="274" font-size="20" fill="#8b949e">排障流程：告警 → 日志 → 链路 → 拓扑</text>
+    <text class="sans" x="300" y="312" font-size="20" fill="#a371f7">→ 不只知道有工具，还知道<tspan font-weight="600">怎么查</tspan></text>
+
+    <line x1="936" y1="224" x2="936" y2="324" stroke="#21262d" stroke-width="1"/>
+    <text class="mono" x="1112" y="274" font-size="52" font-weight="700" fill="#a371f7" text-anchor="end">7</text>
+    <text class="sans" x="1112" y="302" font-size="18" fill="#6e7681" text-anchor="end">个领域 Skill</text>
+  </g>
+
+  <path d="M600 348 L600 362" stroke="#30363d" stroke-width="2"/>
+  <path d="M594 358 L600 366 L606 358" fill="none" stroke="#30363d" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- ============ layer 3: tools ============ -->
+  <g>
+    <rect x="56" y="372" width="1088" height="148" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+    <rect x="56" y="372" width="5" height="148" rx="2.5" fill="#3fb950"/>
+
+    <text class="mono" x="88" y="414" font-size="40" font-weight="700" fill="#3fb950" opacity="0.32">03</text>
+    <text class="sans" x="88" y="456" font-size="30" font-weight="600" fill="#e6edf3">工具</text>
+    <text class="mono" x="88" y="486" font-size="18" fill="#6e7681">CLI + MCP</text>
+
+    <line x1="268" y1="396" x2="268" y2="496" stroke="#21262d" stroke-width="1"/>
+
+    <text class="mono" x="300" y="416" font-size="20">
+      <tspan fill="#3fb950">$</tspan><tspan fill="#c9d1d9" dx="8">octo-cli logs search / trace search / metrics …</tspan>
+    </text>
+    <text class="mono" x="300" y="446" font-size="20" fill="#8b949e">CLI 与 MCP 共用同一套查询能力</text>
+    <text class="sans" x="300" y="484" font-size="20" fill="#3fb950">→ 有了上下文和技能，才能<tspan font-weight="600">精准用对工具</tspan></text>
+
+    <line x1="936" y1="396" x2="936" y2="496" stroke="#21262d" stroke-width="1"/>
+    <text class="mono" x="1112" y="446" font-size="52" font-weight="700" fill="#3fb950" text-anchor="end">41</text>
+    <text class="sans" x="1112" y="474" font-size="18" fill="#6e7681" text-anchor="end">个 MCP 工具</text>
+  </g>
+
+</svg>

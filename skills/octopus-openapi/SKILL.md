@@ -10,11 +10,11 @@ tags:
   - observability
 ---
 
-<!-- source: Notion「Octopus 用户文档 → OpenAPI」及子页面，synced 2026-03-25 -->
+<!-- source: Octopus 官方 OpenAPI 文档，synced 2026-03-25 -->
 
 # Octopus OpenAPI 接口指南
 
-## 文档结构（与 Notion 目录一致）
+## 文档结构（与官方文档目录一致）
 
 | 主题 | 说明 |
 |------|------|
@@ -511,7 +511,7 @@ Case 返回结构与 `infra-octopus-rest` 的 Case API 保持一致；OpenAPI �
 
 ### 8.3 创建告警规则 `POST /infra-octopus-openapi/v1/alert/rules`
 
-Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`（log/metric/issue）、`conditions`、`conditionEvaluationType`（single/and/or）、`notice`、`groupId`、`tags`、`active` 等（结构复杂，以 Notion 长 JSON 为准）。
+Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`（log/metric/issue）、`conditions`、`conditionEvaluationType`（single/and/or）、`notice`、`groupId`、`tags`、`active` 等（结构复杂，以官方文档中的完整 JSON 为准）。
 
 ### 8.4 删除告警规则 `DELETE /infra-octopus-openapi/v1/alert/rules`
 
@@ -578,7 +578,7 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 
 ## 十、大盘相关接口
 
-- **创建** `POST /infra-octopus-openapi/v1/dashboards`：Body 含 `parent`（**目录 id，必填**）、`title`、`variableList`、`widgetList` 等；结构复杂，建议从页面已有大盘导出 JSON 再改。可参考浏览器控制台拉取 `infra-octopus-rest` 下大盘详情接口中的 `data` 字段（见 Notion 原文）。
+- **创建** `POST /infra-octopus-openapi/v1/dashboards`：Body 含 `parent`（**目录 id，必填**）、`title`、`variableList`、`widgetList` 等；结构复杂，建议从页面已有大盘导出 JSON 再改。可参考浏览器控制台拉取 `infra-octopus-rest` 下大盘详情接口中的 `data` 字段（见官方文档）。
 - **更新** `PUT /infra-octopus-openapi/v1/dashboards/{id}`：**全量覆盖**。
 
 业务与数据结构可能迭代，以最新文档为准。
