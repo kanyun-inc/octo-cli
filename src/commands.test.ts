@@ -278,4 +278,245 @@ describe('commands', () => {
       name: 'checkout incident',
     });
   });
+
+  describe('alerts', () => {
+    function setupCli(data: unknown = null) {
+      vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+      vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+      vi.stubEnv('OCTOPUS_ENV', 'default-env');
+      const calls: { url: string; method: string; body: string }[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init: RequestInit) => {
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: String(init.body ?? ''),
+          });
+          return new Response(JSON.stringify({ code: 0, data, message: 'ok' }));
+        })
+      );
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((message?: unknown) => {
+        stdout.push(String(message));
+      });
+      vi.spyOn(console, 'error').mockImplementation((message?: unknown) => {
+        stderr.push(String(message));
+      });
+      const program = new Command();
+      program.exitOverride();
+      registerCommands(program);
+      return { calls, stdout, stderr, program };
+    }
+
+    it('rules sends comma-separated env/priority as plural arrays', async () => {
+      const { calls, program } = setupCli({ count: 0, list: [] });
+
+      await program.parseAsync(
+        ['node', 'octo', 'alerts', 'rules', '-e', 'online,test', '-p', 'P0,P1'],
+        { from: 'node' }
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.envs).toEqual(['online', 'test']);
+      expect(body.priorities).toEqual(['P0', 'P1']);
+      // Singular keys are ignored by the backend and must not be sent.
+      expect(body.env).toBeUndefined();
+      expect(body.priority).toBeUndefined();
+    });
+
+    it('search omits status entirely when not given', async () => {
+      const { calls, program } = setupCli([]);
+
+      await program.parseAsync(['node', 'octo', 'alerts', 'search'], {
+        from: 'node',
+      });
+
+      expect(JSON.parse(calls[0].body).status).toBeUndefined();
+    });
+
+    it('search drops a literal "all" status rather than forwarding it', async () => {
+      const { calls, program } = setupCli([]);
+
+      await program.parseAsync(
+        ['node', 'octo', 'alerts', 'search', '-s', 'all'],
+        { from: 'node' }
+      );
+
+      expect(JSON.parse(calls[0].body).status).toBeUndefined();
+    });
+
+    it('search forwards a real status and rule type', async () => {
+      const { calls, program } = setupCli([]);
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'alerts',
+          'search',
+          '-s',
+          'firing',
+          '--rule-type',
+          'metric',
+        ],
+        { from: 'node' }
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.status).toBe('firing');
+      expect(body.alertRuleType).toBe('metric');
+    });
+
+    it('silence lowercases the scope the backend rejects in uppercase', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'alerts',
+          'silence',
+          '--rule-id',
+          '1',
+          '--alert-id',
+          '2',
+          '--duration',
+          '2h',
+          '--scope',
+          'ALL',
+        ],
+        { from: 'node' }
+      );
+
+      expect(JSON.parse(calls[0].body).scope).toBe('all');
+    });
+
+    it('disable posts to the disables endpoint with a duration window', async () => {
+      const { calls, program } = setupCli(1001);
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'alerts',
+          'disable',
+          '--rule-id',
+          '42',
+          '--duration',
+          '2h',
+          '--reason',
+          'maintenance',
+        ],
+        { from: 'node' }
+      );
+
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/create'
+      );
+      const body = JSON.parse(calls[0].body);
+      expect(body.ruleId).toBe(42);
+      expect(body.endTime - body.startTime).toBe(2 * 60 * 60 * 1000);
+      expect(body.disableNotifyContent).toBe('maintenance');
+      expect(body.scope).toBe('all');
+    });
+
+    it('disable keeps stdout parseable by writing its status line to stderr', async () => {
+      const { stdout, stderr, program } = setupCli(1001);
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'alerts',
+          'disable',
+          '--rule-id',
+          '42',
+          '--duration',
+          '30m',
+        ],
+        { from: 'node' }
+      );
+
+      expect(stdout).toHaveLength(1);
+      expect(JSON.parse(stdout[0])).toBe(1001);
+      expect(stderr).toContain('Disable rule created');
+    });
+
+    it('disable parses --specify-groups into the request', async () => {
+      const { calls, program } = setupCli(1001);
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'alerts',
+          'disable',
+          '--rule-id',
+          '42',
+          '--duration',
+          '1h',
+          '--scope',
+          'specify',
+          '--specify-groups',
+          '{"service":["a","b"]}',
+        ],
+        { from: 'node' }
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.scope).toBe('specify');
+      expect(body.specifyGroups).toEqual({ service: ['a', 'b'] });
+    });
+
+    it('disables lists by rule id', async () => {
+      const { calls, program } = setupCli([]);
+
+      await program.parseAsync(['node', 'octo', 'alerts', 'disables', '42'], {
+        from: 'node',
+      });
+
+      expect(calls[0].method).toBe('GET');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/42'
+      );
+    });
+
+    it('enable deletes by disable id', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(['node', 'octo', 'alerts', 'enable', '1001'], {
+        from: 'node',
+      });
+
+      expect(calls[0].method).toBe('DELETE');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/1001'
+      );
+    });
+
+    it('rejects an unknown scope instead of sending it to the API', async () => {
+      const { calls, program } = setupCli();
+
+      await expect(
+        program.parseAsync(
+          [
+            'node',
+            'octo',
+            'alerts',
+            'disable',
+            '--rule-id',
+            '42',
+            '--duration',
+            '1h',
+            '--scope',
+            'everything',
+          ],
+          { from: 'node' }
+        )
+      ).rejects.toThrow(/Invalid scope/);
+      expect(calls).toHaveLength(0);
+    });
+  });
 });

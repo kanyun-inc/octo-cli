@@ -221,7 +221,8 @@ npx octo-cli logs aggregate -g level -l 30m
 # Search alerts
 npx octo-cli alerts search -s firing -l 1h                    # firing alerts
 npx octo-cli alerts search -s firing -p P0,P1 -l 6h           # P0/P1 only
-npx octo-cli alerts search --service myapp -s all -l 1d        # by service
+npx octo-cli alerts search --service myapp -l 1d               # by service (omit -s for all statuses)
+npx octo-cli alerts search --rule-type metric -l 1h            # metric alerts only
 
 # Alert detail
 npx octo-cli alerts detail 12345                               # get alert detail
@@ -234,9 +235,16 @@ npx octo-cli alerts timeseries 12345 --condition-id 0 -l 2h    # specific condit
 # Alert rules
 npx octo-cli alerts rules --group-id -1                        # all rules
 npx octo-cli alerts rules --search "error" --page 1 --page-size 10
+npx octo-cli alerts rules -e online -p P0,P1                   # filter by env/priority
 
-# Silence
+# Silence — mutes notifications for ONE firing alert (needs --alert-id)
 npx octo-cli alerts silence --rule-id 123 --alert-id 456 --duration 2h
+npx octo-cli alerts unsilence 123
+
+# Disable — stops the RULE itself from evaluating (no alert-id needed)
+npx octo-cli alerts disable --rule-id 123 --duration 2h --reason "maintenance"
+npx octo-cli alerts disables 123                               # list disable records
+npx octo-cli alerts enable 1001                                # delete by DISABLE id, not rule id
 ```
 
 ### Error Tracking (Issues)
