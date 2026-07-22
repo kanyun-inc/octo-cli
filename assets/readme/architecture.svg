@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 548" width="1200" height="548" role="img" aria-labelledby="archTitle archDesc">
   <title id="archTitle">octo-cli 的三层结构：上下文、技能、工具</title>
-  <desc id="archDesc">第一层上下文记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，无需人工维护。第二层是 7 个领域技能，提供查询语法和排障流程，让 Agent 知道怎么查。第三层是 CLI 命令与 38 个 MCP 工具，Agent 有了前两层才能精准用对工具。</desc>
+  <desc id="archDesc">第一层上下文记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，无需人工维护。第二层是 7 个领域技能，提供查询语法和排障流程，让 Agent 知道怎么查。第三层是 CLI 命令与 41 个 MCP 工具，Agent 有了前两层才能精准用对工具。</desc>
 
   <defs>
     <style>
@@ -75,7 +75,7 @@
     <text class="sans" x="300" y="484" font-size="20" fill="#3fb950">→ 有了上下文和技能，才能<tspan font-weight="600">精准用对工具</tspan></text>
 
     <line x1="936" y1="396" x2="936" y2="496" stroke="#21262d" stroke-width="1"/>
-    <text class="mono" x="1112" y="446" font-size="52" font-weight="700" fill="#3fb950" text-anchor="end">38</text>
+    <text class="mono" x="1112" y="446" font-size="52" font-weight="700" fill="#3fb950" text-anchor="end">41</text>
     <text class="sans" x="1112" y="474" font-size="18" fill="#6e7681" text-anchor="end">个 MCP 工具</text>
   </g>
 

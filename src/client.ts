@@ -26,6 +26,33 @@ function mergeHeaders(
   };
 }
 
+/**
+ * Sort query parameters by key into the canonical form the signature is
+ * verified against. Sorting the raw `key=value` pairs instead would order by
+ * value once one key is a prefix of another (`a=2&a1=1` → `a1=1&a=2`, since
+ * `1` < `=`), and would reorder repeated keys by value. Sorting is stable, so
+ * repeated keys keep their original relative order.
+ */
+function canonicalizeQuery(rawQuery: string): string {
+  if (!rawQuery) return '';
+  return rawQuery
+    .split('&')
+    .filter(Boolean)
+    .map((pair, index) => {
+      const separator = pair.indexOf('=');
+      return {
+        key: separator === -1 ? pair : pair.slice(0, separator),
+        index,
+        pair,
+      };
+    })
+    .sort((a, b) =>
+      a.key === b.key ? a.index - b.index : a.key < b.key ? -1 : 1
+    )
+    .map(({ pair }) => pair)
+    .join('&');
+}
+
 interface ApiResponse<T = unknown> {
   code: number;
   data: T;
@@ -35,6 +62,23 @@ interface ApiResponse<T = unknown> {
 type AuthConfig =
   | { mode: 'token'; token: string }
   | { mode: 'appKey'; appId: string; appSecret: string };
+
+/** Silence/disable scope. The backend only accepts these lowercase values. */
+export type AlertScope = 'all' | 'specify';
+
+export const ALERT_SCOPES: readonly AlertScope[] = ['all', 'specify'];
+
+/**
+ * Accepts the legacy uppercase spelling that older versions of this CLI sent,
+ * so `--scope ALL` keeps working instead of failing with "静默范围不能为空".
+ */
+export function normalizeAlertScope(scope: string | undefined): AlertScope {
+  const normalized = (scope ?? 'all').trim().toLowerCase();
+  if (normalized === 'all' || normalized === 'specify') return normalized;
+  throw new Error(
+    `Invalid scope "${scope}". Expected one of: ${ALERT_SCOPES.join(', ')}`
+  );
+}
 
 export class OctoClient {
   private authConfig: AuthConfig;
@@ -52,8 +96,20 @@ export class OctoClient {
     apiPath: string,
     body?: unknown
   ): Promise<T> {
-    const url = `${this.baseUrl}${apiPath}`;
-    const payload = body ? JSON.stringify(body) : '';
+    // Path and query must be signed as separate fields, and the query string
+    // must be in canonical (sorted) form — the backend sorts the query it
+    // receives before verifying. Signing the raw `path?query` as one string
+    // fails with "401 Signature error".
+    const [pathOnly, rawQuery = ''] = apiPath.split('?');
+    const canonicalQuery = canonicalizeQuery(rawQuery);
+
+    const url = `${this.baseUrl}${pathOnly}${
+      canonicalQuery ? `?${canonicalQuery}` : ''
+    }`;
+    // `body ?? ''` is not enough: a bare `0` body (a valid rule id for the
+    // DELETE endpoints) is falsy and would be dropped.
+    const payload =
+      body === undefined || body === null ? '' : JSON.stringify(body);
 
     let authorization: string;
     if (this.authConfig.mode === 'token') {
@@ -63,8 +119,8 @@ export class OctoClient {
         this.authConfig.appId,
         this.authConfig.appSecret,
         method,
-        apiPath,
-        '',
+        pathOnly,
+        canonicalQuery,
         payload
       );
     }
@@ -145,6 +201,7 @@ export class OctoClient {
     from: number;
     to: number;
     env?: string;
+    /** `firing` | `resolved`. Omit for all statuses — do not pass `all`. */
     status?: string;
     priorities?: string[];
     query?: string;
@@ -153,14 +210,19 @@ export class OctoClient {
     pageNo?: number;
     groupId?: number;
     ruleIds?: number[];
+    alertRuleType?: string;
   }) {
     return this.post('/infra-octopus-openapi/v1/alerts/search', params);
   }
 
+  /**
+   * The backend VO uses plural array fields (`envs`, `priorities`). Singular
+   * `env`/`priority` are silently ignored, returning unfiltered results.
+   */
   async alertRulesSearch(params: {
     groupId: number;
-    env?: string;
-    priority?: string;
+    envs?: string[];
+    priorities?: string[];
     statusList?: string[];
     searchInput?: string;
     types?: string[];
@@ -180,12 +242,13 @@ export class OctoClient {
     return this.del('/infra-octopus-openapi/v1/alert/rules', ruleId);
   }
 
+  /** `scope` is lowercase — uppercase `ALL` is rejected with "静默范围不能为空". */
   async alertSilenceCreate(params: {
     ruleId: number;
     alertId: number;
     startTime: number;
     endTime: number;
-    scope: string;
+    scope: AlertScope;
     specifyGroups?: Record<string, string[]>;
     silentlyNotify: boolean;
   }) {
@@ -219,6 +282,35 @@ export class OctoClient {
 
   async alertSilenceDelete(ruleId: number) {
     return this.del(`/infra-octopus-openapi/v1/alerts/silences/${ruleId}`);
+  }
+
+  // --- Alert rule disables ---
+  // A "disable" stops the rule itself from evaluating for a time window,
+  // whereas a "silence" only suppresses notifications for one firing alert.
+
+  async alertRuleDisableCreate(params: {
+    ruleId: number;
+    startTime: number;
+    endTime: number;
+    scope: AlertScope;
+    specifyGroups?: Record<string, string[]>;
+    disableNotifyContent?: string;
+  }) {
+    return this.post(
+      '/infra-octopus-openapi/v1/alert/rules/disables/create',
+      params
+    );
+  }
+
+  async alertRuleDisableList(ruleId: number) {
+    return this.get(`/infra-octopus-openapi/v1/alert/rules/disables/${ruleId}`);
+  }
+
+  /** Takes the disable record's own id, not the alert rule id. */
+  async alertRuleDisableDelete(disableId: number) {
+    return this.del(
+      `/infra-octopus-openapi/v1/alert/rules/disables/${disableId}`
+    );
   }
 
   // --- Error Tracking (Issues) ---

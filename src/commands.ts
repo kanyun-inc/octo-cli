@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import type { Command } from 'commander';
-import { OctoClient } from './client.js';
+import { normalizeAlertScope, OctoClient } from './client.js';
 import {
   getBaseUrl,
   getConfigPath,
@@ -356,11 +356,16 @@ export function registerCommands(program: Command): void {
     .option('-l, --last <duration>', 'Time range', '1h')
     .option('--from <time>', 'Start time')
     .option('--to <time>', 'End time')
-    .option('-s, --status <status>', 'firing, resolved, or all', 'all')
+    .option(
+      '-s, --status <status>',
+      'firing or resolved (omit for all statuses)'
+    )
     .option('-p, --priority <p>', 'Priority filter (comma-separated: P0,P1,P2)')
     .option('--service <svc>', 'Service filter (comma-separated)')
     .option('--group-id <id>', 'Alert rule group ID')
     .option('--rule-ids <ids>', 'Comma-separated alert rule IDs')
+    .option('--rule-type <type>', 'Alert rule type: log, metric, issue')
+    .option('--page <n>', 'Page number')
     .option('-n, --limit <n>', 'Max results', '20')
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (opts) => {
@@ -370,15 +375,20 @@ export function registerCommands(program: Command): void {
         from,
         to,
         env: opts.env,
-        status: opts.status,
+        // The API expects `firing`/`resolved`; omitting it means all statuses.
+        // Sending the literal "all" only works by falling through the backend's
+        // enum-parse failure, so drop it instead.
+        status: opts.status && opts.status !== 'all' ? opts.status : undefined,
         priorities: opts.priority?.split(','),
         query: opts.query,
         services: opts.service?.split(','),
         limit: Number.parseInt(opts.limit, 10),
+        pageNo: opts.page ? Number.parseInt(opts.page, 10) : undefined,
         groupId: opts.groupId ? Number.parseInt(opts.groupId, 10) : undefined,
         ruleIds: opts.ruleIds
           ?.split(',')
           .map((id: string) => Number.parseInt(id, 10)),
+        alertRuleType: opts.ruleType,
       });
       printOutput(data, opts.output as OutputFormat);
     });
@@ -387,8 +397,8 @@ export function registerCommands(program: Command): void {
     .command('rules')
     .description('Search alert rules')
     .option('--group-id <id>', 'Alert rule group ID', '-1')
-    .option('-e, --env <env>', 'Environment')
-    .option('-p, --priority <p>', 'Priority')
+    .option('-e, --env <env>', 'Environment (comma-separated)')
+    .option('-p, --priority <p>', 'Priority (comma-separated: P0,P1,P2)')
     .option('-s, --search <input>', 'Search keyword')
     .option('--service <svc>', 'Service')
     .option(
@@ -408,8 +418,8 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       const data = await client.alertRulesSearch({
         groupId: Number.parseInt(opts.groupId, 10),
-        env: opts.env,
-        priority: opts.priority,
+        envs: opts.env?.split(','),
+        priorities: opts.priority?.split(','),
         searchInput: opts.search,
         service: opts.service,
         statusList: opts.statusList?.split(','),
@@ -430,7 +440,11 @@ export function registerCommands(program: Command): void {
     .requiredOption('--rule-id <id>', 'Alert rule ID')
     .requiredOption('--alert-id <id>', 'Alert ID')
     .requiredOption('--duration <dur>', 'Silence duration (e.g. 2h)')
-    .option('--scope <scope>', 'Silence scope: ALL or SPECIFY', 'ALL')
+    .option('--scope <scope>', 'Silence scope: all or specify', 'all')
+    .option(
+      '--specify-groups <json>',
+      'JSON map of dimension to values, e.g. \'{"service":["a","b"]}\' (scope=specify)'
+    )
     .option('--notify', 'Notify users about silence')
     .action(async (opts) => {
       const client = getClient();
@@ -442,7 +456,10 @@ export function registerCommands(program: Command): void {
         alertId: Number.parseInt(opts.alertId, 10),
         startTime: now,
         endTime: now + ms,
-        scope: opts.scope,
+        scope: normalizeAlertScope(opts.scope),
+        specifyGroups: opts.specifyGroups
+          ? JSON.parse(opts.specifyGroups)
+          : undefined,
         silentlyNotify: !!opts.notify,
       });
       console.log('Silence created');
@@ -519,6 +536,64 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       await client.alertSilenceDelete(Number.parseInt(ruleId, 10));
       console.log('Silence deleted');
+    });
+
+  alerts
+    .command('disable')
+    .description('Stop an alert rule from evaluating for a time window')
+    .requiredOption('--rule-id <id>', 'Alert rule ID')
+    .requiredOption('--duration <dur>', 'Disable duration (e.g. 2h)')
+    .option('--start <time>', 'Start time (default: now)')
+    .option('--scope <scope>', 'Disable scope: all or specify', 'all')
+    .option(
+      '--specify-groups <json>',
+      'JSON map of dimension to values, e.g. \'{"service":["a","b"]}\' (scope=specify)'
+    )
+    .option('--reason <text>', 'Disable notification content')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const { parseDuration } = await import('./time.js');
+      const startTime = opts.start
+        ? resolveTimeRange({ from: opts.start, to: opts.start }).from
+        : Date.now();
+      const data = await client.alertRuleDisableCreate({
+        ruleId: Number.parseInt(opts.ruleId, 10),
+        startTime,
+        endTime: startTime + parseDuration(opts.duration),
+        scope: normalizeAlertScope(opts.scope),
+        specifyGroups: opts.specifyGroups
+          ? JSON.parse(opts.specifyGroups)
+          : undefined,
+        disableNotifyContent: opts.reason,
+      });
+      // The status line goes to stderr so stdout stays a single parseable
+      // document for `jq` and other consumers.
+      console.error('Disable rule created');
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('disables')
+    .description('List disable rules for an alert rule')
+    .argument('<ruleId>', 'Alert rule ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (ruleId, opts) => {
+      const client = getClient();
+      const data = await client.alertRuleDisableList(
+        Number.parseInt(ruleId, 10)
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('enable')
+    .description('Delete a disable rule (use the disable id, not the rule id)')
+    .argument('<disableId>', 'Disable rule ID — from `alerts disables`')
+    .action(async (disableId) => {
+      const client = getClient();
+      await client.alertRuleDisableDelete(Number.parseInt(disableId, 10));
+      console.log('Disable rule deleted');
     });
 
   // ─── issues ──────────────────────────────────────────────

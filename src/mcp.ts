@@ -18,7 +18,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { OctoClient } from './client.js';
+import { normalizeAlertScope, OctoClient } from './client.js';
 import { getBaseUrl, getCredentials, getDefaultEnv } from './config.js';
 
 function getClient(): OctoClient {
@@ -40,6 +40,21 @@ function fail(err: unknown) {
     ],
     isError: true,
   };
+}
+
+/**
+ * Merge a plural array argument with its deprecated singular counterpart.
+ * Returns undefined when neither is set, so the field is omitted entirely.
+ */
+function toStringArray(
+  plural: unknown,
+  singular: unknown
+): string[] | undefined {
+  const values = [
+    ...(Array.isArray(plural) ? (plural as string[]) : []),
+    ...(typeof singular === 'string' && singular ? [singular] : []),
+  ];
+  return values.length > 0 ? [...new Set(values)] : undefined;
 }
 
 const envProp = {
@@ -300,8 +315,9 @@ export function getMcpTools() {
           query: queryProp,
           status: {
             type: 'string',
-            description: 'all, firing, or resolved',
-            enum: ['all', 'firing', 'resolved'],
+            description:
+              'Omit for all statuses. "all" is deprecated and treated as omitted.',
+            enum: ['firing', 'resolved', 'all'],
           },
           priorities: {
             type: 'array',
@@ -314,6 +330,7 @@ export function getMcpTools() {
             description: 'Service name filter',
           },
           limit: { type: 'number', description: 'Max results' },
+          pageNo: { type: 'number', description: 'Page number (default 1)' },
           groupId: {
             type: 'number',
             description: 'Alert rule group ID',
@@ -322,6 +339,10 @@ export function getMcpTools() {
             type: 'array',
             items: { type: 'number' },
             description: 'Filter by specific alert rule IDs',
+          },
+          alertRuleType: {
+            type: 'string',
+            description: 'Alert rule type filter: log, metric, issue',
           },
         },
       },
@@ -337,10 +358,23 @@ export function getMcpTools() {
             type: 'number',
             description: 'Alert rule group ID (-1 for all groups)',
           },
-          env: envProp,
+          envs: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Environment filter, e.g. ["online"]',
+          },
+          priorities: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Priority filter, e.g. ["P0","P1"]',
+          },
+          env: {
+            ...envProp,
+            description: `${envProp.description} (deprecated: use envs)`,
+          },
           priority: {
             type: 'string',
-            description: 'Priority filter: P0, P1, P2',
+            description: 'Priority filter (deprecated: use priorities)',
           },
           statusList: {
             type: 'array',
@@ -474,8 +508,9 @@ export function getMcpTools() {
           },
           scope: {
             type: 'string',
-            description: 'Silence scope',
-            enum: ['ALL', 'SPECIFY'],
+            description:
+              'Silence scope (default: all). Uppercase values are deprecated but accepted.',
+            enum: ['all', 'specify', 'ALL', 'SPECIFY'],
           },
           specifyGroups: {
             type: 'object',
@@ -502,6 +537,76 @@ export function getMcpTools() {
           },
         },
         required: ['ruleId'],
+      },
+    },
+    {
+      name: 'octo_alerts_rule_disable_create',
+      description:
+        'Stop an Octopus alert rule from evaluating during a time window. ' +
+        'Unlike a silence (which only mutes notifications for one firing alert), ' +
+        'a disable suspends the rule itself and needs no alertId.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: { type: 'number', description: 'Alert rule ID to disable' },
+          durationMinutes: {
+            type: 'number',
+            description: 'Disable duration in minutes. Alternative to endTime.',
+          },
+          startTime: {
+            type: 'number',
+            description: 'Start time in epoch ms (default: now)',
+          },
+          endTime: {
+            type: 'number',
+            description:
+              'End time in epoch ms. Required if durationMinutes is not set.',
+          },
+          scope: {
+            type: 'string',
+            description: 'Disable scope (default: all)',
+            enum: ['all', 'specify'],
+          },
+          specifyGroups: {
+            type: 'object',
+            description:
+              'When scope=specify, map of group field to values array',
+          },
+          disableNotifyContent: {
+            type: 'string',
+            description: 'Reason shown in the disable notification',
+          },
+        },
+        required: ['ruleId'],
+      },
+    },
+    {
+      name: 'octo_alerts_rule_disable_list',
+      description:
+        'List the disable records on an Octopus alert rule, including their time windows and scopes.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: { type: 'number', description: 'Alert rule ID' },
+        },
+        required: ['ruleId'],
+      },
+    },
+    {
+      name: 'octo_alerts_rule_disable_delete',
+      description:
+        'Delete a disable record, re-enabling the alert rule. Once no scope=all ' +
+        'record remains, the rule returns to ENABLED.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          disableId: {
+            type: 'number',
+            description:
+              "The disable record's own ID (from octo_alerts_rule_disable_list), not the alert rule ID",
+          },
+        },
+        required: ['disableId'],
       },
     },
     {
@@ -1046,12 +1151,18 @@ export async function handleMcpTool(
           from,
           to,
           env,
-          status: (args.status as string) ?? 'all',
+          // Omitting status means all statuses; "all" is not a valid enum value.
+          status:
+            args.status && args.status !== 'all'
+              ? (args.status as string)
+              : undefined,
           priorities: args.priorities as string[] | undefined,
           services: args.services as string[] | undefined,
           limit: args.limit as number | undefined,
+          pageNo: args.pageNo as number | undefined,
           groupId: args.groupId as number | undefined,
           ruleIds: args.ruleIds as number[] | undefined,
+          alertRuleType: args.alertRuleType as string | undefined,
         });
         return ok(JSON.stringify(data, null, 2));
       }
@@ -1059,8 +1170,10 @@ export async function handleMcpTool(
       case 'octo_alerts_rules_search': {
         const data = await client.alertRulesSearch({
           groupId: (args.groupId as number) ?? -1,
-          env: args.env as string | undefined,
-          priority: args.priority as string | undefined,
+          // `env`/`priority` are the deprecated singular spellings; fold them
+          // into the plural fields the backend actually reads.
+          envs: toStringArray(args.envs, args.env),
+          priorities: toStringArray(args.priorities, args.priority),
           statusList: args.statusList as string[] | undefined,
           searchInput: args.searchInput as string | undefined,
           types: args.types as string[] | undefined,
@@ -1121,13 +1234,47 @@ export async function handleMcpTool(
           alertId: args.alertId as number,
           startTime,
           endTime,
-          scope: (args.scope as string) ?? 'ALL',
+          scope: normalizeAlertScope(args.scope as string | undefined),
           specifyGroups: args.specifyGroups as
             | Record<string, string[]>
             | undefined,
           silentlyNotify: (args.silentlyNotify as boolean) ?? false,
         });
         return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rule_disable_create': {
+        const now = Date.now();
+        const startTime = (args.startTime as number) ?? now;
+        let endTime = args.endTime as number | undefined;
+        if (!endTime && args.durationMinutes) {
+          endTime = startTime + (args.durationMinutes as number) * 60_000;
+        }
+        if (!endTime) {
+          return fail('Either endTime or durationMinutes is required');
+        }
+        const data = await client.alertRuleDisableCreate({
+          ruleId: args.ruleId as number,
+          startTime,
+          endTime,
+          scope: normalizeAlertScope(args.scope as string | undefined),
+          specifyGroups: args.specifyGroups as
+            | Record<string, string[]>
+            | undefined,
+          disableNotifyContent: args.disableNotifyContent as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rule_disable_list': {
+        const data = await client.alertRuleDisableList(args.ruleId as number);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rule_disable_delete': {
+        const disableId = args.disableId as number;
+        await client.alertRuleDisableDelete(disableId);
+        return ok(`Disable record ${disableId} deleted`);
       }
 
       case 'octo_alerts_silence_delete': {

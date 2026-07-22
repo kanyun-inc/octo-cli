@@ -434,4 +434,201 @@ describe('MCP tools', () => {
       targetId: '12345',
     });
   });
+
+  describe('alert rule disables', () => {
+    it('exposes the three disable tools', () => {
+      const toolNames = getMcpTools().map((tool) => tool.name);
+
+      expect(toolNames).toEqual(
+        expect.arrayContaining([
+          'octo_alerts_rule_disable_create',
+          'octo_alerts_rule_disable_list',
+          'octo_alerts_rule_disable_delete',
+        ])
+      );
+    });
+
+    it('creates a disable from durationMinutes', async () => {
+      const calls = captureFetch(1001);
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-22T00:00:00Z'));
+
+      await handleMcpTool(
+        'octo_alerts_rule_disable_create',
+        { ruleId: 42, durationMinutes: 120, disableNotifyContent: 'holiday' },
+        testClient()
+      );
+
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/create'
+      );
+      const body = JSON.parse(calls[0].body);
+      expect(body.ruleId).toBe(42);
+      expect(body.endTime - body.startTime).toBe(120 * 60_000);
+      expect(body.scope).toBe('all');
+      expect(body.disableNotifyContent).toBe('holiday');
+    });
+
+    it('fails when neither endTime nor durationMinutes is given', async () => {
+      const calls = captureFetch();
+
+      const result = await handleMcpTool(
+        'octo_alerts_rule_disable_create',
+        { ruleId: 42 },
+        testClient()
+      );
+
+      expect('isError' in result && result.isError).toBe(true);
+      expect(calls).toHaveLength(0);
+    });
+
+    it('lists and deletes disables by the right id', async () => {
+      const calls = captureFetch([]);
+      const client = testClient();
+
+      await handleMcpTool(
+        'octo_alerts_rule_disable_list',
+        { ruleId: 42 },
+        client
+      );
+      await handleMcpTool(
+        'octo_alerts_rule_disable_delete',
+        { disableId: 1001 },
+        client
+      );
+
+      expect(calls[0].method).toBe('GET');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/42'
+      );
+      expect(calls[1].method).toBe('DELETE');
+      // Deletes take the disable record's id, not the rule id.
+      expect(calls[1].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/1001'
+      );
+    });
+  });
+
+  describe('alert schema back-compat', () => {
+    it('still accepts the deprecated singular env/priority and sends them as arrays', async () => {
+      const calls = captureFetch({ count: 0, list: [] });
+
+      await handleMcpTool(
+        'octo_alerts_rules_search',
+        { env: 'online', priority: 'P0' },
+        testClient()
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.envs).toEqual(['online']);
+      expect(body.priorities).toEqual(['P0']);
+      expect(body.env).toBeUndefined();
+      expect(body.priority).toBeUndefined();
+    });
+
+    it('merges plural and singular without duplicating values', async () => {
+      const calls = captureFetch({ count: 0, list: [] });
+
+      await handleMcpTool(
+        'octo_alerts_rules_search',
+        { envs: ['online'], env: 'online', priorities: ['P0'], priority: 'P1' },
+        testClient()
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.envs).toEqual(['online']);
+      expect(body.priorities).toEqual(['P0', 'P1']);
+    });
+
+    it('omits the filters entirely when neither form is given', async () => {
+      const calls = captureFetch({ count: 0, list: [] });
+
+      await handleMcpTool('octo_alerts_rules_search', {}, testClient());
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.envs).toBeUndefined();
+      expect(body.priorities).toBeUndefined();
+    });
+
+    it('keeps the deprecated params and enum values in the published schema', () => {
+      const tools = getMcpTools();
+      const rulesSearch = tools.find(
+        (tool) => tool.name === 'octo_alerts_rules_search'
+      );
+      const alertsSearch = tools.find(
+        (tool) => tool.name === 'octo_alerts_search'
+      );
+      const silenceCreate = tools.find(
+        (tool) => tool.name === 'octo_alerts_silence_create'
+      );
+
+      // Removing these would break MCP clients that validate against the schema.
+      const ruleProps = rulesSearch?.inputSchema.properties as Record<
+        string,
+        unknown
+      >;
+      expect(ruleProps.env).toBeDefined();
+      expect(ruleProps.priority).toBeDefined();
+      expect(ruleProps.envs).toBeDefined();
+      expect(ruleProps.priorities).toBeDefined();
+
+      const statusProp = (
+        alertsSearch?.inputSchema.properties as Record<
+          string,
+          { enum?: string[] }
+        >
+      ).status;
+      expect(statusProp.enum).toEqual(
+        expect.arrayContaining(['firing', 'resolved', 'all'])
+      );
+
+      const scopeProp = (
+        silenceCreate?.inputSchema.properties as Record<
+          string,
+          { enum?: string[] }
+        >
+      ).scope;
+      expect(scopeProp.enum).toEqual(
+        expect.arrayContaining(['all', 'specify', 'ALL', 'SPECIFY'])
+      );
+    });
+
+    it('normalizes an uppercase scope before sending it', async () => {
+      const calls = captureFetch();
+
+      await handleMcpTool(
+        'octo_alerts_silence_create',
+        { ruleId: 1, alertId: 2, durationMinutes: 30, scope: 'ALL' },
+        testClient()
+      );
+
+      expect(JSON.parse(calls[0].body).scope).toBe('all');
+    });
+
+    it('drops a literal "all" status instead of forwarding it', async () => {
+      const calls = captureFetch([]);
+
+      await handleMcpTool(
+        'octo_alerts_search',
+        { status: 'all', from: 1, to: 2 },
+        testClient()
+      );
+
+      expect(JSON.parse(calls[0].body).status).toBeUndefined();
+    });
+
+    it('forwards alertRuleType and pageNo', async () => {
+      const calls = captureFetch([]);
+
+      await handleMcpTool(
+        'octo_alerts_search',
+        { from: 1, to: 2, alertRuleType: 'metric', pageNo: 3 },
+        testClient()
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.alertRuleType).toBe('metric');
+      expect(body.pageNo).toBe(3);
+    });
+  });
 });

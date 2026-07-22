@@ -499,11 +499,15 @@ Case 返回结构与 `infra-octopus-rest` 的 Case API 保持一致；OpenAPI �
 
 ### 8.1 告警查询 `POST /infra-octopus-openapi/v1/alerts/search`
 
-参数示例：`env`、`from`、`to`、`limit`、`pageNo`、`priorities`（UNKNOWN/P0/P1/P2）、`query`、`status`（all/firing/resolved）、`services`、`alertRuleType`。
+参数示例：`env`、`from`、`to`、`limit`、`pageNo`、`priorities`（UNKNOWN/P0/P1/P2）、`query`、`status`、`services`、`alertRuleType`。
+
+> `status` 只接受 `firing` / `resolved`。**不要传字面量 `all`** —— 需要全部状态时直接省略该字段。
 
 ### 8.2 告警规则搜索 `POST /infra-octopus-openapi/v1/alert/rules/search`
 
-含 `groupId`、`pageParam`、`statusList`（enabled/disabled/paused/silenced）、`searchInput`、`types`、`tags`、`creator` 等。
+含 `groupId`、`envs`、`priorities`、`pageParam`、`statusList`（enabled/disabled/paused/silenced）、`searchInput`、`types`、`tags`、`creator` 等。
+
+> ⚠️ 环境和优先级的字段名是**复数数组** `envs` / `priorities`。传单数的 `env` / `priority` 会被后端**静默忽略**，返回未经过滤的结果——不会报错，所以很容易误判。
 
 ### 8.3 创建告警规则 `POST /infra-octopus-openapi/v1/alert/rules`
 
@@ -515,7 +519,9 @@ Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`�
 
 ### 8.5 告警静默 `POST /infra-octopus-openapi/v1/alerts/silences/create`
 
-`ruleId`、`alertId`、`startTime`、`endTime`、`scope`（如 ALL / SPECIFY）、`specifyGroups`、`silentlyNotify`。
+`ruleId`、`alertId`、`startTime`、`endTime`、`scope`、`specifyGroups`、`silentlyNotify`。
+
+> ⚠️ `scope` 必须小写：`all` 或 `specify`。传大写 `ALL` / `SPECIFY` 会被拒绝，返回 `400 code=-14「静默范围不能为空」`。
 
 ### 8.6 删除静默 `DELETE /infra-octopus-openapi/v1/alerts/silences/{ruleId}`
 
@@ -528,6 +534,21 @@ Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`�
 ### 8.8 告警检测时序数据 `GET /infra-octopus-openapi/v1/alerts/{id}/timeseries`
 
 返回告警对应的检测时序数据（时间点、值、标签、条件状态），供分析告警触发趋势使用。
+
+查询参数：`from`、`to`（必填，毫秒）、`conditionId`（多条件规则时指定第几个条件，默认 0）。
+
+> ⚠️ 这是目前唯一带 query string 的 GET 接口。签名时 **path 与 query 必须分开传**，且 query 需按 key 字母序排列（如 `conditionId=0&from=...&to=...`）。把整串 `path?query` 当作 path 去签会返回 `401 Signature error`。
+
+### 8.9 告警规则停用
+
+停用（disable）作用于**规则本身**，让它在指定时间段内不参与检测；静默（silence）只抑制某条已触发告警的通知，且必须带 `alertId`。两者是不同机制。
+
+- 创建：`POST /infra-octopus-openapi/v1/alert/rules/disables/create`
+  字段：`ruleId`、`startTime`、`endTime`、`scope`（`all` / `specify`，同样只接受小写）、`specifyGroups`、`disableNotifyContent`。返回新建停用规则的 id。
+- 列表：`GET /infra-octopus-openapi/v1/alert/rules/disables/{ruleId}`
+  返回该规则下所有停用记录（含各自的 `id`、时间窗口、`scope`）。
+- 删除：`DELETE /infra-octopus-openapi/v1/alert/rules/disables/{id}`
+  传的是**停用记录自身的 id**，不是告警规则 id。删除后若该规则上不再存在 `scope=all` 的停用记录，规则会自动恢复为 `ENABLED`。
 
 Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`conditionId`（可选，默认 0）。
 

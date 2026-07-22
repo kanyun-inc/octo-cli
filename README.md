@@ -60,10 +60,10 @@ $ # 根因：resume 机制 + onFinish 回调 + 状态刷新形成无限循环
 
 可观测数据又多又杂：日志、链路、指标、告警、RUM、LLM Span、错误追踪、服务拓扑……分散在不同服务、不同环境、不同命名规则里。Agent 不知道「这个项目跑了哪些服务」「该查哪个环境」「上下游依赖是谁」，要么反复问你，要么瞎猜。
 
-octo-cli 的解法是三层结构：**上下文**（这个项目跑了什么、依赖谁、该查哪个环境）→ **技能**（查询语法、排障流程）→ **工具**（CLI 命令与 38 个 MCP 工具）。三层齐了，才是「Agent 会 grep 日志」和「Agent 能排查问题」之间的差距。
+octo-cli 的解法是三层结构：**上下文**（这个项目跑了什么、依赖谁、该查哪个环境）→ **技能**（查询语法、排障流程）→ **工具**（CLI 命令与 41 个 MCP 工具）。三层齐了，才是「Agent 会 grep 日志」和「Agent 能排查问题」之间的差距。
 
 <p align="center">
-  <img src="./assets/readme/architecture.svg" width="100%" alt="octo-cli 的三层结构。第一层上下文：记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，0 人工维护。第二层技能：7 个领域 Skill 提供查询语法和排障流程，让 Agent 知道怎么查。第三层工具：CLI 命令与 38 个 MCP 工具，Agent 有了前两层才能精准用对工具。">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="octo-cli 的三层结构。第一层上下文：记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，0 人工维护。第二层技能：7 个领域 Skill 提供查询语法和排障流程，让 Agent 知道怎么查。第三层工具：CLI 命令与 41 个 MCP 工具，Agent 有了前两层才能精准用对工具。">
 </p>
 
 上下文文件不是手写的 —— Agent 通过**代码分析**（SDK 导入、服务配置）和**线上链路数据**（真实拓扑、入口、依赖）自动生成。链路数据反映的是生产环境实际在跑什么，比看代码靠谱。
@@ -133,13 +133,24 @@ octo-cli logs aggregate -a "*:count" -g level:5 -l 30m   # 按 level 聚合 Top 
 ### 告警
 
 ```bash
-octo-cli alerts search -s firing -p P0,P1 -l 1h         # 正在触发的 P0/P1 告警
-octo-cli alerts search --service myapp -s all             # 某个服务的所有告警
+octo-cli alerts search -s firing -p P0,P1 -l 1h           # 正在触发的 P0/P1 告警
+octo-cli alerts search --service myapp                    # 某个服务的所有告警（不传 -s 即全部状态）
+octo-cli alerts search --rule-type metric -l 1h           # 只看指标类告警
+octo-cli alerts detail <alertId>                          # 告警详情（含触发规则与维度）
+octo-cli alerts timeseries <alertId> -l 1h                # 告警检测时序数据
 octo-cli alerts rules --group-id 123                      # 搜索告警规则
+octo-cli alerts rules -e online -p P0,P1                  # 按环境/优先级过滤规则
 octo-cli alerts create --file rule.json                   # 从 JSON 创建告警规则
 octo-cli alerts delete <ruleId>                           # 删除告警规则
-octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h  # 静默告警
-octo-cli alerts unsilence <ruleId>                        # 解除告警静默
+
+# 静默：只抑制某条已触发告警的通知
+octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h
+octo-cli alerts unsilence <ruleId>
+
+# 停用：让规则本身在时间段内不参与检测（不需要 alertId）
+octo-cli alerts disable --rule-id 1 --duration 2h --reason "节假日维护"
+octo-cli alerts disables <ruleId>                         # 查看该规则的停用记录
+octo-cli alerts enable <disableId>                        # 删除停用记录（传停用记录 id）
 ```
 
 ### 错误追踪 (Issue)
@@ -216,8 +227,10 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `init` | 项目接入：生成上下文模板 + 安装 Skill |
 | `logs search` / `logs aggregate` | 搜索日志 / 日志聚合 |
 | `alerts search` / `alerts rules` | 搜索告警 / 搜索告警规则 |
+| `alerts detail` / `alerts timeseries` | 告警详情 / 检测时序数据 |
 | `alerts create` / `alerts delete` | 从 JSON 创建 / 删除告警规则 |
-| `alerts silence` / `alerts unsilence` | 创建 / 解除告警静默 |
+| `alerts silence` / `alerts unsilence` | 创建 / 解除告警静默（抑制单条告警通知） |
+| `alerts disable` / `alerts disables` / `alerts enable` | 停用规则 / 查看停用记录 / 删除停用记录 |
 | `issues search` / `issues detail` | 搜索 Issue / Issue 详情 |
 | `issues assign` / `issues update` | 批量分配 / 批量更新 Issue 状态 |
 | `cases list` / `cases create` | 查询 / 创建 Case |
@@ -266,7 +279,7 @@ Agent 也是这么用的 —— 把输出 pipe 到 `jq` 做二次提取、pipe �
 
 ## MCP Server
 
-内置 stdio MCP Server，38 个工具，支持 Claude Code、Cursor 等 AI Agent 直接调用。
+内置 stdio MCP Server，41 个工具，支持 Claude Code、Cursor 等 AI Agent 直接调用。
 
 ```bash
 # 前提：已执行 octo-cli login
@@ -295,10 +308,12 @@ npx octo-cli mcp-install
 | 工具 | 说明 |
 |------|------|
 | `octo_logs_search` / `octo_logs_aggregate` | 搜索日志 / 日志聚合 |
-| `octo_alerts_search` | 搜索告警 |
-| `octo_alerts_rules_search` | 搜索告警规则 |
+| `octo_alerts_search` / `octo_alerts_rules_search` | 搜索告警 / 搜索告警规则 |
+| `octo_alerts_detail` / `octo_alerts_timeseries` | 告警详情 / 检测时序数据 |
 | `octo_alerts_rules_create` / `octo_alerts_rules_delete` | 创建 / 删除告警规则 |
-| `octo_alerts_silence_create` / `octo_alerts_silence_delete` | 创建 / 解除告警静默 |
+| `octo_alerts_silence_create` / `octo_alerts_silence_delete` | 创建 / 解除告警静默（抑制单条告警通知） |
+| `octo_alerts_rule_disable_create` | 停用告警规则（规则本身不再检测） |
+| `octo_alerts_rule_disable_list` / `octo_alerts_rule_disable_delete` | 查看 / 删除停用记录 |
 | `octo_issues_search` / `octo_issues_detail` | 搜索 Issue / Issue 详情 |
 | `octo_issues_assign` / `octo_issues_update` | 批量分配 / 批量更新 Issue |
 | `octo_cases_list` / `octo_cases_create` | 查询 / 创建 Case |
