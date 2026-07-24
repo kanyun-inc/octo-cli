@@ -28,13 +28,17 @@ you need observability data but the project has no context yet, run the full onb
 ### Step 1: Check auth
 
 ```bash
-cat ~/.octo-cli/config.json 2>/dev/null || echo "NOT CONFIGURED"
+if [ -n "$OCTOPUS_TOKEN" ] || grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]+"' ~/.octo-cli/config.json 2>/dev/null; then
+  echo "CONFIGURED"
+else
+  echo "NOT CONFIGURED"
+fi
 ```
 
-- **Has app_id/app_secret**: proceed to step 2
-- **NOT CONFIGURED**: ask the user for their Octopus ApplicationKey (appId + appSecret), then:
+- **CONFIGURED**: proceed to step 2
+- **NOT CONFIGURED**: ask the user to create an Octopus Personal Access Token, then have them run:
   ```bash
-  npx octo-cli login --app-id <APP_ID> --app-secret <APP_SECRET>
+  npx octo-cli login --token <PERSONAL_ACCESS_TOKEN>
   ```
 
 ### Step 2: Init (generates template + installs skill)

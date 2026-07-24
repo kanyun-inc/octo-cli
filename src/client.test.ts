@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { generateAuthorizationHeader } from './auth.js';
 import { normalizeAlertScope, OctoClient } from './client.js';
 
 // Intercept fetch to capture request details
@@ -25,9 +24,7 @@ function captureFetch() {
 
 describe('OctoClient alert methods', () => {
   const client = new OctoClient('https://example.com', {
-    mode: 'appKey',
-    appId: 'testId',
-    appSecret: 'testSecret',
+    token: 'test-token',
   });
 
   it('alertRulesDelete sends plain number as body (not object)', async () => {
@@ -96,6 +93,15 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 
+  it('uses the PAT as a Bearer authorization header', async () => {
+    const calls = captureFetch();
+    await client.alertRulesDelete(1);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers.Authorization).toBe('Bearer test-token');
+    vi.restoreAllMocks();
+  });
+
   it('adds headers from OCTOPUS_EXTRA_HEADERS', async () => {
     vi.stubEnv(
       'OCTOPUS_EXTRA_HEADERS',
@@ -127,7 +133,7 @@ describe('OctoClient alert methods', () => {
     await client.alertRulesDelete(1);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].headers.Authorization).toMatch(/^OC-HMAC-SHA256/);
+    expect(calls[0].headers.Authorization).toBe('Bearer test-token');
     expect(calls[0].headers['Content-Type']).toBe('application/json');
     expect(calls[0].headers['User-Agent']).toMatch(/^octo-cli\//);
     expect(calls[0].headers.authorization).toBeUndefined();
@@ -143,7 +149,7 @@ describe('OctoClient alert methods', () => {
     await client.alertRulesDelete(1);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].headers.Authorization).toMatch(/^OC-HMAC-SHA256/);
+    expect(calls[0].headers.Authorization).toBe('Bearer test-token');
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
@@ -182,8 +188,7 @@ describe('OctoClient alert methods', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0].method).toBe('GET');
-    // Query parameters are emitted sorted to match the signature's canonical
-    // form; the unsorted order this previously asserted returns 401.
+    // Query parameters are emitted in a deterministic canonical order.
     expect(calls[0].url).toBe(
       'https://example.com/infra-octopus-openapi/v1/alerts/42/timeseries?conditionId=3&from=1000&to=2000'
     );
@@ -343,11 +348,9 @@ describe('normalizeAlertScope', () => {
   });
 });
 
-describe('OctoClient request signing', () => {
+describe('OctoClient request handling', () => {
   const client = new OctoClient('https://example.com', {
-    mode: 'appKey',
-    appId: 'testId',
-    appSecret: 'testSecret',
+    token: 'test-token',
   });
 
   it('sorts query parameters in the request URL', async () => {
@@ -359,8 +362,7 @@ describe('OctoClient request signing', () => {
       conditionId: 0,
     });
 
-    // The backend verifies the signature against a canonical (sorted) query
-    // string, so the query is emitted in sorted order: conditionId, from, to.
+    // The query is emitted in sorted order: conditionId, from, to.
     expect(calls[0].url).toBe(
       'https://example.com/infra-octopus-openapi/v1/alerts/999/timeseries' +
         '?conditionId=0&from=1716799000000&to=1716800000000'
@@ -368,11 +370,7 @@ describe('OctoClient request signing', () => {
     vi.restoreAllMocks();
   });
 
-  it('signs path and query separately so query order does not change the signature', async () => {
-    // Freeze time so the timestamp inside the Authorization header is stable
-    // and the two signatures are directly comparable.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-22T00:00:00Z'));
+  it('normalizes equivalent query orders to the same request URL', async () => {
     const calls = captureFetch();
     await client.get(
       '/infra-octopus-openapi/v1/alerts/1/timeseries?to=2&from=1'
@@ -383,42 +381,6 @@ describe('OctoClient request signing', () => {
 
     expect(calls[0].url).toBe(calls[1].url);
     expect(calls[0].url).toContain('?from=1&to=2');
-    // Asserting the header itself, not just the URL: signing the raw
-    // `path?query` string produced a valid-looking URL but a 401 signature.
-    expect(calls[0].headers.Authorization).toBe(calls[1].headers.Authorization);
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it('signs the canonical query, not the raw path?query string', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-22T00:00:00Z'));
-    const calls = captureFetch();
-    await client.get(
-      '/infra-octopus-openapi/v1/alerts/1/timeseries?to=2&from=1'
-    );
-
-    const expected = generateAuthorizationHeader(
-      'testId',
-      'testSecret',
-      'GET',
-      '/infra-octopus-openapi/v1/alerts/1/timeseries',
-      'from=1&to=2',
-      ''
-    );
-    expect(calls[0].headers.Authorization).toBe(expected);
-
-    // The pre-fix form — whole URL as path, empty query — must NOT match.
-    const brokenForm = generateAuthorizationHeader(
-      'testId',
-      'testSecret',
-      'GET',
-      '/infra-octopus-openapi/v1/alerts/1/timeseries?to=2&from=1',
-      '',
-      ''
-    );
-    expect(calls[0].headers.Authorization).not.toBe(brokenForm);
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -458,9 +420,7 @@ describe('OctoClient request signing', () => {
 
 describe('OctoClient case methods', () => {
   const client = new OctoClient('https://example.com', {
-    mode: 'appKey',
-    appId: 'testId',
-    appSecret: 'testSecret',
+    token: 'test-token',
   });
 
   it('casesList posts filter and pagination fields', async () => {

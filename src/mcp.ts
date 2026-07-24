@@ -5,9 +5,7 @@
  *   octo mcp
  *
  * Environment variables:
- *   OCTOPUS_TOKEN      — Personal Access Token (preferred)
- *   OCTOPUS_APP_ID     — Application ID (legacy, requires OCTOPUS_APP_SECRET)
- *   OCTOPUS_APP_SECRET — Application Secret (legacy, requires OCTOPUS_APP_ID)
+ *   OCTOPUS_TOKEN      — Personal Access Token
  *   OCTOPUS_BASE_URL   — optional
  *   OCTOPUS_ENV        — optional, default "online"
  */

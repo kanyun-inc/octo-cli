@@ -286,7 +286,7 @@ Agent 也是这么用的 —— 把输出 pipe 到 `jq` 做二次提取、pipe �
 npx octo-cli mcp-install
 ```
 
-自动读取已保存的凭证并注册到 Claude Code。也可以手动配置：
+自动读取已保存的 Personal Access Token 并注册到 Claude Code。也可以手动配置：
 
 ```json
 {
@@ -359,7 +359,7 @@ npx octo-cli <command>          # 通过 npx 直接使用
 npm install -g octo-cli         # 或全局安装，使用 octo 简写
 ```
 
-推荐用 Personal Access Token 认证：
+octo-cli 仅支持 Personal Access Token（PAT）认证：
 
 ```bash
 octo-cli login --token <YOUR_PERSONAL_ACCESS_TOKEN>
@@ -371,7 +371,7 @@ export OCTOPUS_TOKEN=<YOUR_PERSONAL_ACCESS_TOKEN>
 export OCTOPUS_EXTRA_HEADERS='{"X-Octopus-Tenant":"tenant-a"}'
 ```
 
-> **Deprecation Notice：** Application Key 认证（`--app-id` / `--app-secret`，环境变量 `OCTOPUS_APP_ID` / `OCTOPUS_APP_SECRET`）将在下一个版本中移除，请尽快迁移到 Personal Access Token。
+> 旧版 Application Key 登录方式（`--app-id` / `--app-secret`、`OCTOPUS_APP_ID` / `OCTOPUS_APP_SECRET`）不再生效。请改用 `--token` 或 `OCTOPUS_TOKEN`。
 
 ## API 参考
 
