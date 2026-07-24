@@ -90,7 +90,7 @@ pnpm changeset
 
 ### 认证
 
-配置读取统一走 `src/config.ts` 的 `getCredentials()`，它会按优先级返回 `{ mode: 'token' }` 或 `{ mode: 'appKey' }`。新命令不要直接读环境变量。
+配置读取统一走 `src/config.ts` 的 `getCredentials()`；凭据仅支持 Personal Access Token（`--token` / `OCTOPUS_TOKEN`），新命令不要直接读环境变量。
 
 ### 输出
 

@@ -162,8 +162,7 @@ git commit -m "chore: exit beta pre-release mode"
 src/
 ├── index.ts         # CLI 入口，注册顶层命令
 ├── commands.ts      # 业务命令（logs/alerts/traces/...）
-├── client.ts        # Octopus HTTP 客户端
-├── auth.ts          # AppKey HMAC 签名
+├── client.ts        # Octopus HTTP 客户端（PAT Bearer 认证）
 ├── config.ts        # 配置读写、凭证管理（读环境变量与本地文件）
 ├── output.ts        # 统一输出格式（json/table/jsonl）
 ├── time.ts          # 时间范围解析
@@ -174,7 +173,7 @@ src/
 ### 一些约束
 
 - **不要硬编码版本号** — `src/index.ts` 里用 `__PKG_VERSION__`（tsup `define` 在构建时注入）
-- **鉴权统一走 `getCredentials()`** — `src/config.ts` 会按 token → appKey 优先级返回，业务命令不要自己去读 `OCTOPUS_TOKEN` / `OCTOPUS_APP_ID` / `OCTOPUS_APP_SECRET`
+- **鉴权统一走 `getCredentials()`** — `src/config.ts` 统一读取 `OCTOPUS_TOKEN` 或本地 `token`，业务命令不要自己读取环境变量
 - **终端输出用 `printOutput()`** — 统一 json/table/jsonl 三种格式，别直接 `console.log(JSON.stringify(...))`
 - **不要 mock 真实依赖** — 除非是网络 IO
 
@@ -185,7 +184,7 @@ src/
 ```
 feat(logs): add --follow option for real-time tailing
 fix(alerts): handle empty silence list
-docs: clarify token vs appKey usage
+docs: clarify PAT usage
 chore: bump dependencies
 ```
 
