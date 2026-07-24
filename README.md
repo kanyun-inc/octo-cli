@@ -60,10 +60,10 @@ $ # 根因：resume 机制 + onFinish 回调 + 状态刷新形成无限循环
 
 可观测数据又多又杂：日志、链路、指标、告警、RUM、LLM Span、错误追踪、服务拓扑……分散在不同服务、不同环境、不同命名规则里。Agent 不知道「这个项目跑了哪些服务」「该查哪个环境」「上下游依赖是谁」，要么反复问你，要么瞎猜。
 
-octo-cli 的解法是三层结构：**上下文**（这个项目跑了什么、依赖谁、该查哪个环境）→ **技能**（查询语法、排障流程）→ **工具**（CLI 命令与 41 个 MCP 工具）。三层齐了，才是「Agent 会 grep 日志」和「Agent 能排查问题」之间的差距。
+octo-cli 的解法是三层结构：**上下文**（这个项目跑了什么、依赖谁、该查哪个环境）→ **技能**（查询语法、排障流程）→ **工具**（CLI 命令与 43 个 MCP 工具）。三层齐了，才是「Agent 会 grep 日志」和「Agent 能排查问题」之间的差距。
 
 <p align="center">
-  <img src="./assets/readme/architecture.svg" width="100%" alt="octo-cli 的三层结构。第一层上下文：记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，0 人工维护。第二层技能：7 个领域 Skill 提供查询语法和排障流程，让 Agent 知道怎么查。第三层工具：CLI 命令与 41 个 MCP 工具，Agent 有了前两层才能精准用对工具。">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="octo-cli 的三层结构。第一层上下文：记录项目跑了哪些服务、依赖什么、该查哪个环境，由 Agent 自动生成并保鲜，0 人工维护。第二层技能：7 个领域 Skill 提供查询语法和排障流程，让 Agent 知道怎么查。第三层工具：CLI 命令与 43 个 MCP 工具，Agent 有了前两层才能精准用对工具。">
 </p>
 
 上下文文件不是手写的 —— Agent 通过**代码分析**（SDK 导入、服务配置）和**线上链路数据**（真实拓扑、入口、依赖）自动生成。链路数据反映的是生产环境实际在跑什么，比看代码靠谱。
@@ -140,6 +140,8 @@ octo-cli alerts detail <alertId>                          # 告警详情（含�
 octo-cli alerts timeseries <alertId> -l 1h                # 告警检测时序数据
 octo-cli alerts rules --group-id 123                      # 搜索告警规则
 octo-cli alerts rules -e online -p P0,P1                  # 按环境/优先级过滤规则
+octo-cli alerts groups                                    # 查询全部告警组
+octo-cli alerts rule-details --ids 101,102                # 批量查询规则详情（最多 100 个）
 octo-cli alerts create --file rule.json                   # 从 JSON 创建告警规则
 octo-cli alerts delete <ruleId>                           # 删除告警规则
 
@@ -228,6 +230,7 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `logs search` / `logs aggregate` | 搜索日志 / 日志聚合 |
 | `alerts search` / `alerts rules` | 搜索告警 / 搜索告警规则 |
 | `alerts detail` / `alerts timeseries` | 告警详情 / 检测时序数据 |
+| `alerts groups` / `alerts rule-details` | 查询告警组 / 批量查询告警规则详情 |
 | `alerts create` / `alerts delete` | 从 JSON 创建 / 删除告警规则 |
 | `alerts silence` / `alerts unsilence` | 创建 / 解除告警静默（抑制单条告警通知） |
 | `alerts disable` / `alerts disables` / `alerts enable` | 停用规则 / 查看停用记录 / 删除停用记录 |
@@ -279,7 +282,7 @@ Agent 也是这么用的 —— 把输出 pipe 到 `jq` 做二次提取、pipe �
 
 ## MCP Server
 
-内置 stdio MCP Server，41 个工具，支持 Claude Code、Cursor 等 AI Agent 直接调用。
+内置 stdio MCP Server，43 个工具，支持 Claude Code、Cursor 等 AI Agent 直接调用。
 
 ```bash
 # 前提：已执行 octo-cli login
@@ -310,6 +313,7 @@ npx octo-cli mcp-install
 | `octo_logs_search` / `octo_logs_aggregate` | 搜索日志 / 日志聚合 |
 | `octo_alerts_search` / `octo_alerts_rules_search` | 搜索告警 / 搜索告警规则 |
 | `octo_alerts_detail` / `octo_alerts_timeseries` | 告警详情 / 检测时序数据 |
+| `octo_alerts_groups_list` / `octo_alerts_rules_details_search` | 查询告警组 / 批量查询告警规则详情 |
 | `octo_alerts_rules_create` / `octo_alerts_rules_delete` | 创建 / 删除告警规则 |
 | `octo_alerts_silence_create` / `octo_alerts_silence_delete` | 创建 / 解除告警静默（抑制单条告警通知） |
 | `octo_alerts_rule_disable_create` | 停用告警规则（规则本身不再检测） |
@@ -380,7 +384,7 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 | 领域 | 接口 |
 |------|------|
 | 日志 | `/v1/logs/search`、`/v1/logs/aggregate` |
-| 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
+| 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules/groups`、`/v1/alert/rules/details/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
 | Issue | `/v1/log-error-tracking/issues/*` |
 | Case | `/v1/cases/*`、`/v1/cases/groups/*` |
 | 链路 | `/v1/trace/span/list`、`/v1/trace/aggregate` |

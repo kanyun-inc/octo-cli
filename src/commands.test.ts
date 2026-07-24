@@ -353,6 +353,57 @@ describe('commands', () => {
       expect(body.priority).toBeUndefined();
     });
 
+    it('groups lists alert groups without reordering the response', async () => {
+      const groups = [
+        { groupId: 2, groupName: '综合组', author: 'user2' },
+        { groupId: 1, groupName: '阿里组', author: 'user1' },
+      ];
+      const { calls, stdout, program } = setupCli(groups);
+
+      await program.parseAsync(['node', 'octo', 'alerts', 'groups'], {
+        from: 'node',
+      });
+
+      expect(calls[0].method).toBe('GET');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/groups'
+      );
+      expect(JSON.parse(stdout[0])).toEqual(groups);
+    });
+
+    it('rule-details queries comma-separated IDs and keeps duplicates', async () => {
+      const details = [
+        { id: 2, name: 'rule-2' },
+        { id: 1, name: 'rule-1' },
+      ];
+      const { calls, stdout, program } = setupCli(details);
+
+      await program.parseAsync(
+        ['node', 'octo', 'alerts', 'rule-details', '--ids', '2, 1,2'],
+        { from: 'node' }
+      );
+
+      expect(calls[0].method).toBe('POST');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/details/search'
+      );
+      expect(JSON.parse(calls[0].body)).toEqual({ ruleIds: [2, 1, 2] });
+      expect(JSON.parse(stdout[0])).toEqual(details);
+    });
+
+    it('rule-details rejects invalid IDs before calling the API', async () => {
+      const { calls, program } = setupCli([]);
+
+      await expect(
+        program.parseAsync(
+          ['node', 'octo', 'alerts', 'rule-details', '--ids', '1,not-a-number'],
+          { from: 'node' }
+        )
+      ).rejects.toThrow('Alert rule IDs must be positive integers');
+
+      expect(calls).toHaveLength(0);
+    });
+
     it('search omits status entirely when not given', async () => {
       const { calls, program } = setupCli([]);
 

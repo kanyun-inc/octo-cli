@@ -509,29 +509,42 @@ Case 返回结构与 `infra-octopus-rest` 的 Case API 保持一致；OpenAPI �
 
 > ⚠️ 环境和优先级的字段名是**复数数组** `envs` / `priorities`。传单数的 `env` / `priority` 会被后端**静默忽略**，返回未经过滤的结果——不会报错，所以很容易误判。
 
-### 8.3 创建告警规则 `POST /infra-octopus-openapi/v1/alert/rules`
+### 8.3 查询全部告警组 `GET /infra-octopus-openapi/v1/alert/rules/groups`
+
+返回当前租户的全部未删除告警组，字段为 `groupId`、`groupName`、`author`。接口保持服务层返回顺序，客户端不应自行排序。
+
+### 8.4 批量查询告警规则详情 `POST /infra-octopus-openapi/v1/alert/rules/details/search`
+
+请求体为 `{ "ruleIds": [101, 102] }`。`ruleIds` 必须非空、每项为正整数，单次最多 100 个。
+
+- 重复 ID 按首次出现位置去重，响应顺序与首次出现顺序一致。
+- 不存在、已删除或不属于当前租户的规则不会出现在响应中。
+- 支持 LOG、METRIC、ISSUE、RUM、LLM 规则。
+- 响应字段包括 `id`、`name`、`version`、`priority`、`groupId`、`groupName`、`env`、`service`、`ruleType`、`conditions`、`conditionEvaluationType`、`notice`、`tags`、`ruleTemplateId`、`activationStatus`、`createTime`、`updateTime`、`checkInterval`、`delayCheck`、`escalationPolicyId`。
+
+### 8.5 创建告警规则 `POST /infra-octopus-openapi/v1/alert/rules`
 
 Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`（log/metric/issue）、`conditions`、`conditionEvaluationType`（single/and/or）、`notice`、`groupId`、`tags`、`active` 等（结构复杂，以官方文档中的完整 JSON 为准）。
 
-### 8.4 删除告警规则 `DELETE /infra-octopus-openapi/v1/alert/rules`
+### 8.6 删除告警规则 `DELETE /infra-octopus-openapi/v1/alert/rules`
 
 请求体含待删 **`ruleId`**（以线上实际为准：亦有文档写作 `ruleIds` 列表，集成时请对照 Swagger）。
 
-### 8.5 告警静默 `POST /infra-octopus-openapi/v1/alerts/silences/create`
+### 8.7 告警静默 `POST /infra-octopus-openapi/v1/alerts/silences/create`
 
 `ruleId`、`alertId`、`startTime`、`endTime`、`scope`、`specifyGroups`、`silentlyNotify`。
 
 > ⚠️ `scope` 必须小写：`all` 或 `specify`。传大写 `ALL` / `SPECIFY` 会被拒绝，返回 `400 code=-14「静默范围不能为空」`。
 
-### 8.6 删除静默 `DELETE /infra-octopus-openapi/v1/alerts/silences/{ruleId}`
+### 8.8 删除静默 `DELETE /infra-octopus-openapi/v1/alerts/silences/{ruleId}`
 
-### 8.7 告警详情 `GET /infra-octopus-openapi/v1/alerts/{id}`
+### 8.9 告警详情 `GET /infra-octopus-openapi/v1/alerts/{id}`
 
 返回告警基本信息、规则条件（含查询表达式和阈值）及触发维度组合。
 
 响应字段：`id`、`title`、`priority`、`status`、`env`、`scope`、`alertRuleType`、`activeTime`、`duration`、`tags`、`description`、`rule`（含 `id`、`name`、`conditionEvaluationType`、`conditions`）、`activeMergedGroup`。
 
-### 8.8 告警检测时序数据 `GET /infra-octopus-openapi/v1/alerts/{id}/timeseries`
+### 8.10 告警检测时序数据 `GET /infra-octopus-openapi/v1/alerts/{id}/timeseries`
 
 返回告警对应的检测时序数据（时间点、值、标签、条件状态），供分析告警触发趋势使用。
 
@@ -539,7 +552,7 @@ Body 为规则 **数组**；字段含 `name`、`env`、`priority`、`ruleType`�
 
 > ⚠️ 这是目前唯一带 query string 的 GET 接口。签名时 **path 与 query 必须分开传**，且 query 需按 key 字母序排列（如 `conditionId=0&from=...&to=...`）。把整串 `path?query` 当作 path 去签会返回 `401 Signature error`。
 
-### 8.9 告警规则停用
+### 8.11 告警规则停用
 
 停用（disable）作用于**规则本身**，让它在指定时间段内不参与检测；静默（silence）只抑制某条已触发告警的通知，且必须带 `alertId`。两者是不同机制。
 

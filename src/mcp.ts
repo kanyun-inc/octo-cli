@@ -404,6 +404,35 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_alerts_groups_list',
+      description:
+        'List all Octopus alert groups for the current tenant. Returns groupId, groupName, and author in service order.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {},
+      },
+    },
+    {
+      name: 'octo_alerts_rules_details_search',
+      description:
+        'Get full details for up to 100 Octopus alert rules by ID. ' +
+        'Duplicate IDs are de-duplicated by first occurrence; missing, deleted, or inaccessible rules are omitted.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100,
+            items: { type: 'integer', minimum: 1 },
+            description:
+              'Alert rule IDs. Response order follows the first occurrence of each requested ID.',
+          },
+        },
+        required: ['ruleIds'],
+      },
+    },
+    {
       name: 'octo_alerts_rules_create',
       description:
         'Create Octopus alert rules. Accepts an array of rule objects. ' +
@@ -1183,6 +1212,18 @@ export async function handleMcpTool(
             pageSize: (args.pageSize as number) ?? 20,
           },
         });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_groups_list': {
+        const data = await client.alertGroupsList();
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rules_details_search': {
+        const data = await client.alertRuleDetailsSearch(
+          args.ruleIds as number[]
+        );
         return ok(JSON.stringify(data, null, 2));
       }
 
