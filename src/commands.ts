@@ -422,6 +422,33 @@ export function registerCommands(program: Command): void {
     });
 
   alerts
+    .command('groups')
+    .description('List all alert groups')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.alertGroupsList();
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('rule-details')
+    .description('Get alert rule details by IDs')
+    .requiredOption(
+      '--ids <ids>',
+      'Comma-separated alert rule IDs (1-100 positive integers)'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const ruleIds = opts.ids
+        .split(',')
+        .map((id: string) => Number(id.trim()));
+      const client = getClient();
+      const data = await client.alertRuleDetailsSearch(ruleIds);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
     .command('silence')
     .description('Create alert silence')
     .requiredOption('--rule-id <id>', 'Alert rule ID')

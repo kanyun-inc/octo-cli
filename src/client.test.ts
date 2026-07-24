@@ -82,6 +82,49 @@ describe('OctoClient alert methods', () => {
     vi.restoreAllMocks();
   });
 
+  it('alertGroupsList gets all alert groups without a body', async () => {
+    const calls = captureFetch();
+    await client.alertGroupsList();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alert/rules/groups'
+    );
+    expect(calls[0].body).toBe('');
+    vi.restoreAllMocks();
+  });
+
+  it('alertRuleDetailsSearch preserves requested IDs in the POST body', async () => {
+    const calls = captureFetch();
+    await client.alertRuleDetailsSearch([2, 1, 2]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alert/rules/details/search'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({ ruleIds: [2, 1, 2] });
+    vi.restoreAllMocks();
+  });
+
+  it('alertRuleDetailsSearch rejects invalid batches before the request', async () => {
+    const calls = captureFetch();
+
+    await expect(client.alertRuleDetailsSearch([])).rejects.toThrow(
+      'At least one alert rule ID is required'
+    );
+    await expect(
+      client.alertRuleDetailsSearch(Array.from({ length: 101 }, () => 1))
+    ).rejects.toThrow('At most 100 alert rule IDs can be queried at once');
+    await expect(client.alertRuleDetailsSearch([1, 0])).rejects.toThrow(
+      'Alert rule IDs must be positive integers'
+    );
+
+    expect(calls).toHaveLength(0);
+    vi.restoreAllMocks();
+  });
+
   it('every request carries an octo-cli User-Agent', async () => {
     const calls = captureFetch();
     await client.alertRulesDelete(1);

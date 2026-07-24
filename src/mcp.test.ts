@@ -433,6 +433,70 @@ describe('MCP tools', () => {
     });
   });
 
+  describe('alert rule query tools', () => {
+    it('exposes group list and batch detail schemas', () => {
+      const tools = getMcpTools();
+      const toolNames = tools.map((tool) => tool.name);
+
+      expect(toolNames).toEqual(
+        expect.arrayContaining([
+          'octo_alerts_groups_list',
+          'octo_alerts_rules_details_search',
+        ])
+      );
+
+      const detailsTool = tools.find(
+        (tool) => tool.name === 'octo_alerts_rules_details_search'
+      );
+      const ruleIds = detailsTool?.inputSchema.properties.ruleIds as {
+        minItems: number;
+        maxItems: number;
+        items: { type: string; minimum: number };
+      };
+      expect(detailsTool?.inputSchema.required).toEqual(['ruleIds']);
+      expect(ruleIds).toMatchObject({
+        minItems: 1,
+        maxItems: 100,
+        items: { type: 'integer', minimum: 1 },
+      });
+    });
+
+    it('lists groups and searches rule details through the matching endpoints', async () => {
+      const calls = captureFetch([]);
+      const client = testClient();
+
+      await handleMcpTool('octo_alerts_groups_list', {}, client);
+      await handleMcpTool(
+        'octo_alerts_rules_details_search',
+        { ruleIds: [2, 1, 2] },
+        client
+      );
+
+      expect(calls[0].method).toBe('GET');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/groups'
+      );
+      expect(calls[1].method).toBe('POST');
+      expect(calls[1].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/details/search'
+      );
+      expect(JSON.parse(calls[1].body)).toEqual({ ruleIds: [2, 1, 2] });
+    });
+
+    it('rejects an empty detail batch before calling the API', async () => {
+      const calls = captureFetch();
+
+      const result = await handleMcpTool(
+        'octo_alerts_rules_details_search',
+        { ruleIds: [] },
+        testClient()
+      );
+
+      expect('isError' in result && result.isError).toBe(true);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
   describe('alert rule disables', () => {
     it('exposes the three disable tools', () => {
       const toolNames = getMcpTools().map((tool) => tool.name);

@@ -215,6 +215,28 @@ export class OctoClient {
     return this.post('/infra-octopus-openapi/v1/alert/rules/search', params);
   }
 
+  async alertGroupsList() {
+    return this.get('/infra-octopus-openapi/v1/alert/rules/groups');
+  }
+
+  async alertRuleDetailsSearch(ruleIds: number[]) {
+    if (!Array.isArray(ruleIds) || ruleIds.length === 0) {
+      throw new Error('At least one alert rule ID is required');
+    }
+    if (ruleIds.length > 100) {
+      throw new Error('At most 100 alert rule IDs can be queried at once');
+    }
+    if (
+      ruleIds.some((ruleId) => !Number.isSafeInteger(ruleId) || ruleId <= 0)
+    ) {
+      throw new Error('Alert rule IDs must be positive integers');
+    }
+
+    return this.post('/infra-octopus-openapi/v1/alert/rules/details/search', {
+      ruleIds,
+    });
+  }
+
   async alertRulesCreate(rules: unknown[]) {
     return this.post('/infra-octopus-openapi/v1/alert/rules', rules);
   }
