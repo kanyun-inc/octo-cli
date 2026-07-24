@@ -240,6 +240,8 @@ npx octo-cli alerts timeseries 12345 --condition-id 0 -l 2h    # specific condit
 npx octo-cli alerts rules --group-id -1                        # all rules
 npx octo-cli alerts rules --search "error" --page 1 --page-size 10
 npx octo-cli alerts rules -e online -p P0,P1                   # filter by env/priority
+npx octo-cli alerts groups                                     # all alert groups
+npx octo-cli alerts rule-details --ids 101,102                 # full details, up to 100 rule IDs
 
 # Silence — mutes notifications for ONE firing alert (needs --alert-id)
 npx octo-cli alerts silence --rule-id 123 --alert-id 456 --duration 2h
