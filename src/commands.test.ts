@@ -8,6 +8,33 @@ describe('commands', () => {
     vi.restoreAllMocks();
   });
 
+  it('login only exposes PAT credentials', () => {
+    const program = new Command();
+    registerCommands(program);
+
+    const login = program.commands.find(
+      (command) => command.name() === 'login'
+    );
+    const options = login?.options.map((option) => option.long);
+
+    expect(options).toContain('--token');
+    expect(options).not.toContain('--app-id');
+    expect(options).not.toContain('--app-secret');
+  });
+
+  it('login rejects a missing PAT', async () => {
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({ writeErr: () => undefined });
+    registerCommands(program);
+
+    await expect(
+      program.parseAsync(['node', 'octo', 'login', '--skip-skill'], {
+        from: 'node',
+      })
+    ).rejects.toThrow("required option '--token <token>' not specified");
+  });
+
   it('issues update maps TIME ignore rule into request payload', async () => {
     vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
     vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');

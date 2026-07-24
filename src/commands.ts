@@ -6,7 +6,6 @@ import {
   getConfigPath,
   getCredentials,
   getDefaultEnv,
-  saveConfig,
   saveToken,
 } from './config.js';
 import { printOutput } from './output.js';
@@ -217,26 +216,14 @@ export function registerCommands(program: Command): void {
   // ─── login ───────────────────────────────────────────────
   program
     .command('login')
-    .description('Configure Octopus API credentials')
-    .option('--token <token>', 'Personal Access Token')
-    .option('--app-id <id>', 'Application ID (legacy)')
-    .option('--app-secret <secret>', 'Application Secret (legacy)')
+    .description('Configure an Octopus Personal Access Token')
+    .requiredOption('--token <token>', 'Personal Access Token')
     .option('--url <url>', 'Base URL')
     .option('--env <env>', 'Default environment')
     .option('--skip-skill', 'Skip global skill installation')
     .action(async (opts) => {
-      if (opts.token) {
-        saveToken(opts.token, opts.url, opts.env);
-        console.log(`Token saved to ${getConfigPath()}`);
-      } else if (opts.appId && opts.appSecret) {
-        saveConfig(opts.appId, opts.appSecret, opts.url, opts.env);
-        console.log(`Credentials saved to ${getConfigPath()}`);
-      } else {
-        console.error(
-          'Error: Provide --token <TOKEN> or both --app-id and --app-secret.'
-        );
-        process.exit(1);
-      }
+      saveToken(opts.token, opts.url, opts.env);
+      console.log(`Token saved to ${getConfigPath()}`);
 
       if (!opts.skipSkill) {
         console.log('');

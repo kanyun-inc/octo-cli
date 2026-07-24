@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { getToken } from './config.js';
 
 const TEMPLATE = `---
 description: Octopus observability context for this project. Auto-loaded when tasks involve debugging, errors, alerts, performance, logs, traces, or monitoring.
@@ -254,20 +254,7 @@ function findRuleDir(cwd: string): { dir: string; filePath: string } {
 
 export function runInit(targetDir?: string): void {
   // Check login first — init needs live Octopus data for trace-driven discovery
-  const configPath = path.join(os.homedir(), '.octo-cli', 'config.json');
-  let hasCredentials = false;
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    hasCredentials = !!(config.app_id && config.app_secret) || !!config.token;
-  } catch {
-    // no config file
-  }
-  hasCredentials =
-    hasCredentials ||
-    !!(process.env.OCTOPUS_APP_ID && process.env.OCTOPUS_APP_SECRET) ||
-    !!process.env.OCTOPUS_TOKEN;
-
-  if (!hasCredentials) {
+  if (!getToken()) {
     console.error('Error: Not logged in. Run this first:');
     console.error('');
     console.error('  npx octo-cli login --token <TOKEN>');

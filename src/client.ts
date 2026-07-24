@@ -1,4 +1,3 @@
-import { generateAuthorizationHeader } from './auth.js';
 import { getExtraHeaders } from './config.js';
 
 declare const __PKG_VERSION__: string;
@@ -27,11 +26,11 @@ function mergeHeaders(
 }
 
 /**
- * Sort query parameters by key into the canonical form the signature is
- * verified against. Sorting the raw `key=value` pairs instead would order by
- * value once one key is a prefix of another (`a=2&a1=1` → `a1=1&a=2`, since
- * `1` < `=`), and would reorder repeated keys by value. Sorting is stable, so
- * repeated keys keep their original relative order.
+ * Sort query parameters by key to keep request URLs deterministic. Sorting the
+ * raw `key=value` pairs instead would order by value once one key is a prefix
+ * of another (`a=2&a1=1` → `a1=1&a=2`, since `1` < `=`), and would reorder
+ * repeated keys by value. Sorting is stable, so repeated keys keep their
+ * original relative order.
  */
 function canonicalizeQuery(rawQuery: string): string {
   if (!rawQuery) return '';
@@ -59,9 +58,7 @@ interface ApiResponse<T = unknown> {
   message: string;
 }
 
-type AuthConfig =
-  | { mode: 'token'; token: string }
-  | { mode: 'appKey'; appId: string; appSecret: string };
+type AuthConfig = { token: string };
 
 /** Silence/disable scope. The backend only accepts these lowercase values. */
 export type AlertScope = 'all' | 'specify';
@@ -96,10 +93,8 @@ export class OctoClient {
     apiPath: string,
     body?: unknown
   ): Promise<T> {
-    // Path and query must be signed as separate fields, and the query string
-    // must be in canonical (sorted) form — the backend sorts the query it
-    // receives before verifying. Signing the raw `path?query` as one string
-    // fails with "401 Signature error".
+    // Preserve the established canonical query ordering so equivalent requests
+    // produce the same URL and repeated keys retain their original order.
     const [pathOnly, rawQuery = ''] = apiPath.split('?');
     const canonicalQuery = canonicalizeQuery(rawQuery);
 
@@ -111,23 +106,9 @@ export class OctoClient {
     const payload =
       body === undefined || body === null ? '' : JSON.stringify(body);
 
-    let authorization: string;
-    if (this.authConfig.mode === 'token') {
-      authorization = `Bearer ${this.authConfig.token}`;
-    } else {
-      authorization = generateAuthorizationHeader(
-        this.authConfig.appId,
-        this.authConfig.appSecret,
-        method,
-        pathOnly,
-        canonicalQuery,
-        payload
-      );
-    }
-
     const headers = mergeHeaders(getExtraHeaders(), {
       'Content-Type': 'application/json',
-      Authorization: authorization,
+      Authorization: `Bearer ${this.authConfig.token}`,
       'User-Agent': USER_AGENT,
     });
 

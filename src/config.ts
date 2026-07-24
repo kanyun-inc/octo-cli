@@ -9,8 +9,6 @@ const DEFAULT_BASE_URL = 'https://octopus-app.zhenguanyu.com';
 
 interface Config {
   token?: string;
-  app_id?: string;
-  app_secret?: string;
   base_url?: string;
   env?: string;
 }
@@ -38,14 +36,6 @@ export function getToken(): string | undefined {
   return process.env.OCTOPUS_TOKEN ?? readConfig().token;
 }
 
-export function getAppId(): string | undefined {
-  return process.env.OCTOPUS_APP_ID ?? readConfig().app_id;
-}
-
-export function getAppSecret(): string | undefined {
-  return process.env.OCTOPUS_APP_SECRET ?? readConfig().app_secret;
-}
-
 export function getDefaultEnv(): string {
   return process.env.OCTOPUS_ENV ?? readConfig().env ?? 'online';
 }
@@ -70,45 +60,23 @@ export function getExtraHeaders(): Record<string, string> {
   );
 }
 
-export function saveConfig(
-  appId: string,
-  appSecret: string,
-  baseUrl?: string,
-  env?: string
-): void {
-  const config = readConfig();
-  config.app_id = appId;
-  config.app_secret = appSecret;
-  if (baseUrl) config.base_url = baseUrl;
-  if (env) config.env = env;
-  writeConfig(config);
-}
-
 export function saveToken(token: string, baseUrl?: string, env?: string): void {
-  const config = readConfig();
-  config.token = token;
-  delete config.app_id;
-  delete config.app_secret;
-  if (baseUrl) config.base_url = baseUrl;
-  if (env) config.env = env;
-  writeConfig(config);
+  const previous = readConfig();
+  writeConfig({
+    token,
+    base_url: baseUrl || previous.base_url,
+    env: env || previous.env,
+  });
 }
 
 export function getConfigPath(): string {
   return CONFIG_FILE;
 }
 
-export function getCredentials():
-  | { mode: 'token'; token: string }
-  | { mode: 'appKey'; appId: string; appSecret: string } {
+export function getCredentials(): { token: string } {
   const token = getToken();
   if (token) {
-    return { mode: 'token', token };
-  }
-  const appId = getAppId();
-  const appSecret = getAppSecret();
-  if (appId && appSecret) {
-    return { mode: 'appKey', appId, appSecret };
+    return { token };
   }
   console.error(
     'Error: Not configured. Run `octo login --token <TOKEN>` or set OCTOPUS_TOKEN.'

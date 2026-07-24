@@ -24,9 +24,7 @@ function captureFetch(data: unknown = null) {
 
 function testClient() {
   return new OctoClient('https://example.com', {
-    mode: 'appKey',
-    appId: 'testId',
-    appSecret: 'testSecret',
+    token: 'test-token',
   });
 }
 
