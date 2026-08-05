@@ -44,6 +44,9 @@ describe('MCP tools', () => {
         'octo_issues_detail',
         'octo_issues_assign',
         'octo_issues_update',
+        'octo_issues_merge',
+        'octo_issues_unmerge',
+        'octo_issues_merge_children',
         'octo_trace_aggregate',
         'octo_metrics_point',
         'octo_services_entries',
@@ -101,6 +104,72 @@ describe('MCP tools', () => {
       issueIds: ['ISSUE-1'],
       status: 'resolved',
     });
+  });
+
+  it('dispatches the issue merge lifecycle tools', async () => {
+    const client = testClient();
+    const calls = captureFetch({ mergeIssueId: 'merge-1' });
+
+    const mergeResult = await handleMcpTool(
+      'octo_issues_merge',
+      { issueIds: ['child-1', 'child-2'] },
+      client
+    );
+    await handleMcpTool(
+      'octo_issues_unmerge',
+      {
+        mergeIssueId: 'merge-1',
+        childIssueIds: ['child-1'],
+        dataSource: 'rum',
+      },
+      client
+    );
+    await handleMcpTool(
+      'octo_issues_merge_children',
+      { issueId: 'child-1' },
+      client
+    );
+
+    expect(mergeResult.content[0].text).toContain('"mergeIssueId": "merge-1"');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/merge'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      issueIds: ['child-1', 'child-2'],
+      dataSource: 'log',
+    });
+    expect(calls[1].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/unmerge'
+    );
+    expect(JSON.parse(calls[1].body)).toEqual({
+      mergeIssueId: 'merge-1',
+      childIssueIds: ['child-1'],
+      dataSource: 'rum',
+    });
+    expect(calls[2].method).toBe('GET');
+    expect(calls[2].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/child-1/merge-children?dataSource=log'
+    );
+  });
+
+  it('rejects invalid issue merge tool inputs before HTTP', async () => {
+    const client = testClient();
+    const calls = captureFetch();
+
+    const mergeResult = await handleMcpTool(
+      'octo_issues_merge',
+      { issueIds: ['child-1', 'child-1'] },
+      client
+    );
+    const unmergeResult = await handleMcpTool(
+      'octo_issues_unmerge',
+      { mergeIssueId: 'merge-1', childIssueIds: [] },
+      client
+    );
+
+    expect(mergeResult.content[0]?.text).toContain('At least two');
+    expect(unmergeResult.content[0]?.text).toContain('At least one');
+    expect(calls).toHaveLength(0);
   });
 
   it('dispatches issue update with USER_COUNT ignoreRule', async () => {

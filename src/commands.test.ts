@@ -90,6 +90,108 @@ describe('commands', () => {
     expect(logs).toContain('Issues updated');
   });
 
+  it('issues merge lifecycle commands call OpenAPI and print JSON', async () => {
+    vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+    vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+    const calls: { url: string; method: string; body: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: String(init.body ?? ''),
+        });
+        const data = url.endsWith('/merge')
+          ? { mergeIssueId: 'merge-1' }
+          : url.endsWith('/unmerge')
+            ? { mergeIssueExists: false }
+            : { children: [], canonicalIssueId: 'merge-1' };
+        return new Response(JSON.stringify({ code: 0, data, message: 'ok' }));
+      })
+    );
+    const logs: string[] = [];
+    const errors: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((message?: unknown) => {
+      logs.push(String(message));
+    });
+    vi.spyOn(console, 'error').mockImplementation((message?: unknown) => {
+      errors.push(String(message));
+    });
+
+    const run = async (args: string[]) => {
+      const program = new Command();
+      program.exitOverride();
+      registerCommands(program);
+      await program.parseAsync(['node', 'octo', ...args], { from: 'node' });
+    };
+
+    await run(['issues', 'merge', '--ids', 'child-1,child-2']);
+    await run([
+      'issues',
+      'unmerge',
+      'merge-1',
+      '--ids',
+      'child-1',
+      '--source',
+      'rum',
+    ]);
+    await run(['issues', 'merge-children', 'child-1']);
+
+    expect(calls[0].method).toBe('POST');
+    expect(JSON.parse(calls[0].body)).toEqual({
+      issueIds: ['child-1', 'child-2'],
+      dataSource: 'log',
+    });
+    expect(JSON.parse(calls[1].body)).toEqual({
+      mergeIssueId: 'merge-1',
+      childIssueIds: ['child-1'],
+      dataSource: 'rum',
+    });
+    expect(calls[2].method).toBe('GET');
+    expect(calls[2].url).toContain(
+      '/issues/child-1/merge-children?dataSource=log'
+    );
+    expect(JSON.parse(logs[0])).toEqual({ mergeIssueId: 'merge-1' });
+    expect(JSON.parse(logs[1])).toEqual({ mergeIssueExists: false });
+    expect(errors).toContain(
+      'The merge Issue was automatically dissolved because fewer than two children remain'
+    );
+  });
+
+  it('issues unmerge does not print a dissolve warning when the parent remains', async () => {
+    vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+    vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            code: 0,
+            data: { mergeIssueExists: true },
+            message: 'ok',
+          })
+        );
+      })
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const errors: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((message?: unknown) => {
+      errors.push(String(message));
+    });
+
+    const program = new Command();
+    program.exitOverride();
+    registerCommands(program);
+
+    await program.parseAsync(
+      ['node', 'octo', 'issues', 'unmerge', 'merge-1', '--ids', 'child-1'],
+      { from: 'node' }
+    );
+
+    expect(errors).toHaveLength(0);
+  });
+
   it('issues update rejects USER_COUNT without userField for log source', async () => {
     vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
     vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');

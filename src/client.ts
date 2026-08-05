@@ -65,6 +65,39 @@ export type AlertScope = 'all' | 'specify';
 
 export const ALERT_SCOPES: readonly AlertScope[] = ['all', 'specify'];
 
+function normalizeIssueDataSource(
+  dataSource: string | undefined
+): 'log' | 'rum' {
+  const normalized = dataSource ?? 'log';
+  if (normalized === 'log' || normalized === 'rum') return normalized;
+  throw new Error('Issue data source must be one of: log, rum');
+}
+
+function normalizeIssueIds(
+  issueIds: string[],
+  minimum: number,
+  minimumErrorMessage: string
+): string[] {
+  if (!Array.isArray(issueIds)) {
+    throw new Error('Issue IDs must be an array');
+  }
+  const normalized = issueIds.map((issueId) => String(issueId).trim());
+  if (normalized.some((issueId) => !issueId)) {
+    throw new Error('Issue IDs must not contain blank values');
+  }
+  const distinct = [...new Set(normalized)];
+  if (distinct.length < minimum) {
+    throw new Error(minimumErrorMessage);
+  }
+  return distinct;
+}
+
+function normalizeIssueId(issueId: string, fieldName: string): string {
+  const normalized = String(issueId ?? '').trim();
+  if (!normalized) throw new Error(`${fieldName} must not be blank`);
+  return normalized;
+}
+
 /**
  * Accepts the legacy uppercase spelling that older versions of this CLI sent,
  * so `--scope ALL` keeps working instead of failing with "静默范围不能为空".
@@ -360,6 +393,47 @@ export class OctoClient {
     return this.put(
       '/infra-octopus-openapi/v1/log-error-tracking/issues/batch-update',
       params
+    );
+  }
+
+  async issuesMerge(params: { issueIds: string[]; dataSource?: string }) {
+    return this.post(
+      '/infra-octopus-openapi/v1/log-error-tracking/issues/merge',
+      {
+        issueIds: normalizeIssueIds(
+          params.issueIds,
+          2,
+          'At least two distinct Issue IDs are required'
+        ),
+        dataSource: normalizeIssueDataSource(params.dataSource),
+      }
+    );
+  }
+
+  async issuesUnmerge(params: {
+    mergeIssueId: string;
+    childIssueIds: string[];
+    dataSource?: string;
+  }): Promise<{ mergeIssueExists: boolean }> {
+    return this.post<{ mergeIssueExists: boolean }>(
+      '/infra-octopus-openapi/v1/log-error-tracking/issues/unmerge',
+      {
+        mergeIssueId: normalizeIssueId(params.mergeIssueId, 'mergeIssueId'),
+        childIssueIds: normalizeIssueIds(
+          params.childIssueIds,
+          1,
+          'At least one child Issue ID is required'
+        ),
+        dataSource: normalizeIssueDataSource(params.dataSource),
+      }
+    );
+  }
+
+  async issueMergeChildren(issueId: string, dataSource?: string) {
+    const normalizedIssueId = normalizeIssueId(issueId, 'issueId');
+    const normalizedDataSource = normalizeIssueDataSource(dataSource);
+    return this.get(
+      `/infra-octopus-openapi/v1/log-error-tracking/issues/${encodeURIComponent(normalizedIssueId)}/merge-children?dataSource=${normalizedDataSource}`
     );
   }
 

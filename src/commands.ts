@@ -719,6 +719,70 @@ export function registerCommands(program: Command): void {
       console.log('Issues updated');
     });
 
+  issues
+    .command('merge')
+    .description('Merge issues and return the canonical merge Issue ID')
+    .requiredOption('--ids <ids>', 'Comma-separated issue IDs')
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.issuesMerge({
+        issueIds: opts.ids.split(','),
+        dataSource: opts.source,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  issues
+    .command('unmerge')
+    .description('Remove child issues from a merge Issue')
+    .argument('<mergeIssueId>', 'Merge Issue ID')
+    .requiredOption('--ids <ids>', 'Comma-separated child Issue IDs')
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (mergeIssueId, opts) => {
+      const client = getClient();
+      const data = await client.issuesUnmerge({
+        mergeIssueId,
+        childIssueIds: opts.ids.split(','),
+        dataSource: opts.source,
+      });
+      if (!data.mergeIssueExists) {
+        console.error(
+          'The merge Issue was automatically dissolved because fewer than two children remain'
+        );
+      }
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  issues
+    .command('merge-children')
+    .description('Get merge children or the canonical parent of a frozen child')
+    .argument('<issueId>', 'Issue ID')
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (issueId, opts) => {
+      const client = getClient();
+      const data = await client.issueMergeChildren(issueId, opts.source);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
   // ─── cases ───────────────────────────────────────────────
   const cases = program.command('cases').description('Case operations');
 
