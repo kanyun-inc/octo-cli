@@ -750,6 +750,73 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_issues_merge',
+      description:
+        'Merge at least two distinct Octopus Issues. Returns the authoritative mergeIssueId; do not infer the parent from input order.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          issueIds: {
+            type: 'array',
+            minItems: 2,
+            items: { type: 'string', minLength: 1 },
+            description:
+              'Issue IDs to merge. Duplicates are removed in first-occurrence order.',
+          },
+          dataSource: {
+            type: 'string',
+            enum: ['log', 'rum'],
+            description: 'Data source: log or rum (default log)',
+          },
+        },
+        required: ['issueIds'],
+      },
+    },
+    {
+      name: 'octo_issues_unmerge',
+      description:
+        'Remove child Issues from a merge Issue. mergeIssueExists=false means the parent was automatically dissolved.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          mergeIssueId: {
+            type: 'string',
+            minLength: 1,
+            description: 'Merge Issue ID',
+          },
+          childIssueIds: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string', minLength: 1 },
+            description: 'Child Issue IDs to remove',
+          },
+          dataSource: {
+            type: 'string',
+            enum: ['log', 'rum'],
+            description: 'Data source: log or rum (default log)',
+          },
+        },
+        required: ['mergeIssueId', 'childIssueIds'],
+      },
+    },
+    {
+      name: 'octo_issues_merge_children',
+      description:
+        'Get children of an active merge Issue, or canonicalIssueId when the queried Issue is a frozen child.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          issueId: { type: 'string', minLength: 1, description: 'Issue ID' },
+          dataSource: {
+            type: 'string',
+            enum: ['log', 'rum'],
+            description: 'Data source: log or rum (default log)',
+          },
+        },
+        required: ['issueId'],
+      },
+    },
+    {
       name: 'octo_cases_list',
       description:
         'List Octopus cases. Filter by group, status, priority, assignee, or case name input.',
@@ -1358,6 +1425,31 @@ export async function handleMcpTool(
           ignoreRule: validateIssueIgnoreRuleArgs(args),
         });
         return ok('Issues updated');
+      }
+
+      case 'octo_issues_merge': {
+        const data = await client.issuesMerge({
+          issueIds: args.issueIds as string[],
+          dataSource: args.dataSource as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_unmerge': {
+        const data = await client.issuesUnmerge({
+          mergeIssueId: String(args.mergeIssueId ?? ''),
+          childIssueIds: args.childIssueIds as string[],
+          dataSource: args.dataSource as string | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_merge_children': {
+        const data = await client.issueMergeChildren(
+          String(args.issueId ?? ''),
+          args.dataSource as string | undefined
+        );
+        return ok(JSON.stringify(data, null, 2));
       }
 
       case 'octo_cases_list': {

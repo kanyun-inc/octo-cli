@@ -267,6 +267,9 @@ npx octo-cli issues detail <issueId>
 # Manage
 npx octo-cli issues assign --user 123 --ids id1,id2
 npx octo-cli issues update --ids id1,id2 -s resolved
+npx octo-cli issues merge --ids id1,id2
+npx octo-cli issues merge-children <issueId>
+npx octo-cli issues unmerge <mergeIssueId> --ids child1
 ```
 
 ### Cases

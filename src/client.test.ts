@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { normalizeAlertScope, OctoClient } from './client.js';
 
 // Intercept fetch to capture request details
@@ -367,6 +367,71 @@ describe('OctoClient alert methods', () => {
       'https://example.com/infra-octopus-openapi/v1/alert/rules/disables/1001'
     );
     vi.restoreAllMocks();
+  });
+});
+
+describe('OctoClient issue merge methods', () => {
+  const client = new OctoClient('https://example.com', {
+    token: 'test-token',
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls merge, unmerge, and merge-children OpenAPI endpoints', async () => {
+    const calls = captureFetch();
+
+    await client.issuesMerge({
+      issueIds: [' child-1 ', 'child-1', 'child-2'],
+    });
+    await client.issuesUnmerge({
+      mergeIssueId: 'merge-1',
+      childIssueIds: ['child-1', 'child-1'],
+      dataSource: 'rum',
+    });
+    await client.issueMergeChildren('child-1', 'rum');
+
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/merge'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      issueIds: ['child-1', 'child-2'],
+      dataSource: 'log',
+    });
+    expect(calls[1].method).toBe('POST');
+    expect(calls[1].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/unmerge'
+    );
+    expect(JSON.parse(calls[1].body)).toEqual({
+      mergeIssueId: 'merge-1',
+      childIssueIds: ['child-1'],
+      dataSource: 'rum',
+    });
+    expect(calls[2].method).toBe('GET');
+    expect(calls[2].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/child-1/merge-children?dataSource=rum'
+    );
+  });
+
+  it('rejects invalid merge inputs before sending a request', async () => {
+    const calls = captureFetch();
+
+    await expect(
+      client.issuesMerge({ issueIds: ['child-1', ' child-1 '] })
+    ).rejects.toThrow('At least two distinct Issue IDs are required');
+    await expect(
+      client.issuesUnmerge({ mergeIssueId: ' ', childIssueIds: ['child-1'] })
+    ).rejects.toThrow('mergeIssueId must not be blank');
+    await expect(
+      client.issuesUnmerge({ mergeIssueId: 'merge-1', childIssueIds: [] })
+    ).rejects.toThrow('At least one child Issue ID is required');
+    await expect(
+      client.issueMergeChildren('child-1', 'metric')
+    ).rejects.toThrow('Issue data source must be one of: log, rum');
+
+    expect(calls).toHaveLength(0);
   });
 });
 
