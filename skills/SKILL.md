@@ -336,6 +336,7 @@ npx octo-cli llm -q "application.name = myapp" -l 1h -n 50    # by app
 npx octo-cli rum list -e test -q "application.name = rush-app AND type = session" -l 1d
 npx octo-cli rum list -q "type = error" -l 1h
 npx octo-cli rum detail <id>
+npx octo-cli rum aggregate -q "type = view" -a "*:count" -g "view.name:10" -l 1h
 ```
 
 ### Events
@@ -343,6 +344,7 @@ npx octo-cli rum detail <id>
 ```bash
 npx octo-cli events -l 1d                              # recent events
 npx octo-cli events -q "type = deployment" -l 7d       # deployments
+npx octo-cli events aggregate -a "*:count" -g "type:10" -l 1d
 ```
 
 ### Users

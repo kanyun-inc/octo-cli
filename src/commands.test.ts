@@ -408,6 +408,271 @@ describe('commands', () => {
     });
   });
 
+  describe('RUM and event aggregation', () => {
+    function setupCli() {
+      vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+      vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+      vi.stubEnv('OCTOPUS_ENV', 'default-env');
+      const calls: { url: string; body: string }[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init: RequestInit) => {
+          calls.push({ url, body: String(init.body ?? '') });
+          return new Response(
+            JSON.stringify({ code: 0, data: [], message: 'ok' })
+          );
+        })
+      );
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const errors: string[] = [];
+      const program = new Command();
+      program.configureOutput({
+        writeErr: (message) => errors.push(message),
+      });
+      program.exitOverride();
+      registerCommands(program);
+      return { calls, errors, program };
+    }
+
+    it('rum aggregate supports multiple aggregations and groups', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'rum',
+          'aggregate',
+          '--from',
+          '1700000000000',
+          '--to',
+          '1700003600000',
+          '-a',
+          'view.loading_time:p95',
+          '-a',
+          '*:count',
+          '-g',
+          'type:5',
+          '-g',
+          'view.name',
+        ],
+        { from: 'node' }
+      );
+
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/rum/aggregate'
+      );
+      expect(JSON.parse(calls[0].body)).toEqual({
+        env: 'default-env',
+        from: 1_700_000_000_000,
+        to: 1_700_003_600_000,
+        aggregationField: [
+          { field: 'view.loading_time', operation: 'p95' },
+          { field: '*', operation: 'count' },
+        ],
+        groupFieldList: [
+          {
+            field: 'type',
+            limit: 5,
+            sort: {
+              field: 'view.loading_time',
+              operation: 'p95',
+              order: 'desc',
+            },
+          },
+          {
+            field: 'view.name',
+            limit: 10,
+            sort: {
+              field: 'view.loading_time',
+              operation: 'p95',
+              order: 'desc',
+            },
+          },
+        ],
+      });
+    });
+
+    it.each([
+      ['logs', 'aggregate'],
+      ['trace', 'aggregate'],
+      ['rum', 'aggregate'],
+      ['events', 'aggregate'],
+    ])(
+      '%s aggregate sorts groups by the first aggregation',
+      async (...command) => {
+        const { calls, program } = setupCli();
+
+        await program.parseAsync(
+          [
+            'node',
+            'octo',
+            ...command,
+            '--from',
+            '1700000000000',
+            '--to',
+            '1700003600000',
+            '-a',
+            'duration:p95',
+            '-a',
+            '*:count',
+            '-g',
+            'service:5',
+          ],
+          { from: 'node' }
+        );
+
+        const body = JSON.parse(calls[0].body);
+        const groups = body.groupFields ?? body.groupFieldList;
+        expect(groups[0].sort).toEqual({
+          field: 'duration',
+          operation: 'p95',
+          order: 'desc',
+        });
+      }
+    );
+
+    it('events aggregate defaults to count all', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'events',
+          'aggregate',
+          '--from',
+          '1700000000000',
+          '--to',
+          '1700003600000',
+        ],
+        { from: 'node' }
+      );
+
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/event/aggregate'
+      );
+      expect(JSON.parse(calls[0].body)).toEqual({
+        env: 'default-env',
+        from: 1_700_000_000_000,
+        to: 1_700_003_600_000,
+        aggregationField: [{ field: '*', operation: 'count' }],
+      });
+    });
+
+    it('events keeps list as its backward-compatible default command', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'events',
+          '--from',
+          '1700000000000',
+          '--to',
+          '1700003600000',
+        ],
+        { from: 'node' }
+      );
+
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/event/list'
+      );
+    });
+
+    it.each([
+      ['logs', 'aggregate'],
+      ['trace', 'aggregate'],
+      ['rum', 'aggregate'],
+      ['events', 'aggregate'],
+    ])('%s aggregate rejects a non-numeric group limit', async (...command) => {
+      const { calls, errors, program } = setupCli();
+
+      await expect(
+        program.parseAsync(
+          ['node', 'octo', ...command, '--group', 'type:abc'],
+          { from: 'node' }
+        )
+      ).rejects.toThrow(
+        '--group limit must be a positive integer, received "abc"'
+      );
+      expect(errors.join('')).toContain(
+        "error: option '-g, --group <field[:limit]>' argument 'type:abc' is invalid."
+      );
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each(['type:10abc', 'type:', 'type:10:abc', 'type:0', 'type:-1'])(
+      'rejects malformed group value %s',
+      async (group) => {
+        const { calls, program } = setupCli();
+
+        await expect(
+          program.parseAsync(
+            ['node', 'octo', 'events', 'aggregate', '--group', group],
+            { from: 'node' }
+          )
+        ).rejects.toThrow('--group limit must be a positive integer');
+        expect(calls).toHaveLength(0);
+      }
+    );
+
+    it.each([
+      ['logs', 'aggregate'],
+      ['trace', 'aggregate'],
+      ['rum', 'aggregate'],
+      ['events', 'aggregate'],
+    ])('%s aggregate rejects malformed aggregations', async (...command) => {
+      for (const aggregation of ['type:', ':count', 'type:count:extra']) {
+        const { calls, errors, program } = setupCli();
+
+        await expect(
+          program.parseAsync(
+            ['node', 'octo', ...command, '--agg', aggregation],
+            { from: 'node' }
+          )
+        ).rejects.toThrow();
+        expect(errors.join('')).toContain(
+          `error: option '-a, --agg <field[:op]>' argument '${aggregation}' is invalid.`
+        );
+        expect(calls).toHaveLength(0);
+      }
+    });
+
+    it('defaults an aggregation without an operation to count', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'events',
+          'aggregate',
+          '--from',
+          '1700000000000',
+          '--to',
+          '1700003600000',
+          '--agg',
+          'type',
+          '--group',
+          'service',
+        ],
+        { from: 'node' }
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.aggregationField).toEqual([
+        { field: 'type', operation: 'count' },
+      ]);
+      expect(body.groupFieldList[0].sort).toEqual({
+        field: 'type',
+        operation: 'count',
+        order: 'desc',
+      });
+    });
+  });
+
   describe('alerts', () => {
     function setupCli(data: unknown = null) {
       vi.stubEnv('OCTOPUS_TOKEN', 'test-token');

@@ -32,7 +32,7 @@ tags:
 | [用户](#十一用户查询相关接口) | 用户列表 |
 | [LLM](#十二llm-查询相关接口) | LLM span 列表 |
 | [RUM](#十三rum-查询相关接口) | 列表 / 详情 / 聚合 |
-| [事件](#十四事件查询相关接口) | Event 列表 |
+| [事件](#十四事件查询相关接口) | Event 列表 / 聚合 |
 
 **API 根路径约定**：下文接口路径均以 `https://<host>/infra-octopus-openapi/v1` 为前缀。常见 host 为 `octopus-app.zhenguanyu.com`（与官方 SDK 示例一致）；部分文档链接使用 `octopus.zhenguanyu.com`，部署环境以前者为准或按运维说明切换。
 
@@ -633,6 +633,10 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 ### Event 列表 `POST /infra-octopus-openapi/v1/event/list`
 
 请求字段与 RUM 列表相近；响应 `eventItems` 含 `eventId`、`title`、`type`、`impactedService`、`timestamp` 等。
+
+### Event 聚合 `POST /infra-octopus-openapi/v1/event/aggregate`
+
+请求使用 `aggregationField` 指定聚合字段与操作，使用 `groupFieldList` 指定分组字段、数量上限和排序方式。
 
 ---
 

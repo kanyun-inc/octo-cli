@@ -217,7 +217,9 @@ octo-cli services topo myapp                              # 服务拓扑图
 octo-cli llm -l 1h -q "model.name = gpt-4"              # LLM 可观测
 octo-cli rum list -e test -q "application.name = myapp" -l 1d   # RUM 会话
 octo-cli rum detail <id>                                  # RUM 事件详情
+octo-cli rum aggregate -q "type = view" -a "*:count" -g "view.name:10" -l 1h
 octo-cli events -l 1d                                     # 部署事件
+octo-cli events aggregate -a "*:count" -g "type:10" -l 1d
 octo-cli users alice bob                                  # 按姓名搜索用户
 ```
 
@@ -250,8 +252,8 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `metrics query` / `metrics point` | 指标时序查询 / 单点查询 |
 | `services list` / `services entries` / `services topo` | 服务列表 / 入口列表 / 拓扑图 |
 | `llm` | LLM Span 查询 |
-| `rum list` / `rum detail` | RUM 事件列表 / 详情 |
-| `events` | 事件查询 |
+| `rum list` / `rum detail` / `rum aggregate` | RUM 事件列表 / 详情 / 聚合 |
+| `events` / `events list` / `events aggregate` | 事件查询 / 聚合（`list` 为默认子命令） |
 | `users` | 用户搜索 |
 | `mcp` / `mcp-install` | 启动 MCP Server / 一键注册到 Claude Code |
 
@@ -336,8 +338,8 @@ npx octo-cli mcp-install
 | `octo_metrics_query` / `octo_metrics_point` | 指标时序 / 单点查询 |
 | `octo_services_list` / `octo_services_entries` / `octo_services_topology` | 服务列表 / 入口 / 拓扑 |
 | `octo_llm_list` | LLM Span 查询 |
-| `octo_rum_list` / `octo_rum_detail` | RUM 事件查询 / 详情 |
-| `octo_events_list` | 事件查询 |
+| `octo_rum_list` / `octo_rum_detail` / `octo_rum_aggregate` | RUM 事件查询 / 详情 / 聚合 |
+| `octo_events_list` / `octo_events_aggregate` | 事件查询 / 聚合 |
 | `octo_users_search` | 用户搜索 |
 
 </details>
@@ -398,7 +400,7 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 | 服务 | `/v1/apm/query/*`、`/v1/apm/topology/*` |
 | LLM | `/v1/llm/span/list` |
 | RUM | `/v1/rum/list`、`/v1/rum/{id}`、`/v1/rum/aggregate` |
-| 事件 | `/v1/event/list` |
+| 事件 | `/v1/event/list`、`/v1/event/aggregate` |
 | 大盘 | `/v1/dashboards`（创建 / 更新） |
 | 用户 | `/v1/users/search` |
 

@@ -16,6 +16,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { parsePositiveInteger } from './aggregate.js';
 import { normalizeAlertScope, OctoClient } from './client.js';
 import { getBaseUrl, getCredentials, getDefaultEnv } from './config.js';
 
@@ -132,6 +133,10 @@ function parsePointInTime(value: unknown): number {
   if (/^\d+$/.test(text)) return Number(text);
 
   return new Date(text).getTime();
+}
+
+function parseGroupLimit(value: unknown): number {
+  return parsePositiveInteger(value === undefined ? 10 : value, 'group_limit');
 }
 
 function validateRuleAbsence(
@@ -1161,6 +1166,37 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_rum_aggregate',
+      description:
+        'Aggregate Octopus RUM events — count, avg, max, min, sum, percentile, grouped by fields.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          aggregation_field: {
+            type: 'string',
+            description: 'Field to aggregate (use "*" for count)',
+          },
+          aggregation_op: {
+            type: 'string',
+            description:
+              'Operation: count, count_distinct, sum, avg, max, min, p50, p95, p99',
+          },
+          group_by: {
+            type: 'string',
+            description: 'Field to group by (e.g. "type", "view.name")',
+          },
+          group_limit: {
+            type: 'number',
+            description: 'Max groups (default 10)',
+          },
+        },
+      },
+    },
+    {
       name: 'octo_events_list',
       description:
         'Query Octopus events — deployments, config changes, incidents.',
@@ -1172,6 +1208,37 @@ export function getMcpTools() {
           to: toProp,
           query: queryProp,
           limit: { type: 'number', description: 'Page size' },
+        },
+      },
+    },
+    {
+      name: 'octo_events_aggregate',
+      description:
+        'Aggregate Octopus events — count, avg, max, min, sum, percentile, grouped by fields.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          env: envProp,
+          from: fromProp,
+          to: toProp,
+          query: queryProp,
+          aggregation_field: {
+            type: 'string',
+            description: 'Field to aggregate (use "*" for count)',
+          },
+          aggregation_op: {
+            type: 'string',
+            description:
+              'Operation: count, count_distinct, sum, avg, max, min, p50, p95, p99',
+          },
+          group_by: {
+            type: 'string',
+            description: 'Field to group by (e.g. "type")',
+          },
+          group_limit: {
+            type: 'number',
+            description: 'Max groups (default 10)',
+          },
         },
       },
     },
@@ -1218,7 +1285,9 @@ export async function handleMcpTool(
         const aggField = String(args.aggregation_field ?? '*');
         const aggOp = String(args.aggregation_op ?? 'count');
         const groupBy = args.group_by as string | undefined;
-        const groupLimit = Number(args.group_limit ?? 10);
+        const groupLimit = groupBy
+          ? parseGroupLimit(args.group_limit)
+          : undefined;
 
         const data = await client.logsAggregate({
           env,
@@ -1562,7 +1631,9 @@ export async function handleMcpTool(
         const aggField = String(args.aggregation_field ?? '*');
         const aggOp = String(args.aggregation_op ?? 'count');
         const groupBy = args.group_by as string | undefined;
-        const groupLimit = Number(args.group_limit ?? 10);
+        const groupLimit = groupBy
+          ? parseGroupLimit(args.group_limit)
+          : undefined;
 
         const data = await client.traceAggregate({
           env,
@@ -1674,6 +1745,39 @@ export async function handleMcpTool(
         return ok(JSON.stringify(data, null, 2));
       }
 
+      case 'octo_rum_aggregate': {
+        const { env, from, to } = timeDefaults(args);
+        const aggregationField = String(args.aggregation_field ?? '*');
+        const aggregationOperation = String(args.aggregation_op ?? 'count');
+        const groupBy = args.group_by as string | undefined;
+        const groupLimit = groupBy
+          ? parseGroupLimit(args.group_limit)
+          : undefined;
+        const data = await client.rumAggregate({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          aggregationField: [
+            { field: aggregationField, operation: aggregationOperation },
+          ],
+          groupFieldList: groupBy
+            ? [
+                {
+                  field: groupBy,
+                  limit: groupLimit,
+                  sort: {
+                    field: aggregationField,
+                    operation: aggregationOperation,
+                    order: 'desc',
+                  },
+                },
+              ]
+            : undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
       case 'octo_events_list': {
         const { env, from, to } = timeDefaults(args);
         const data = await client.eventList({
@@ -1682,6 +1786,39 @@ export async function handleMcpTool(
           to,
           query: args.query as string | undefined,
           pageSize: args.limit as number | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_events_aggregate': {
+        const { env, from, to } = timeDefaults(args);
+        const aggregationField = String(args.aggregation_field ?? '*');
+        const aggregationOperation = String(args.aggregation_op ?? 'count');
+        const groupBy = args.group_by as string | undefined;
+        const groupLimit = groupBy
+          ? parseGroupLimit(args.group_limit)
+          : undefined;
+        const data = await client.eventAggregate({
+          env,
+          from,
+          to,
+          query: args.query as string | undefined,
+          aggregationField: [
+            { field: aggregationField, operation: aggregationOperation },
+          ],
+          groupFieldList: groupBy
+            ? [
+                {
+                  field: groupBy,
+                  limit: groupLimit,
+                  sort: {
+                    field: aggregationField,
+                    operation: aggregationOperation,
+                    order: 'desc',
+                  },
+                },
+              ]
+            : undefined,
         });
         return ok(JSON.stringify(data, null, 2));
       }

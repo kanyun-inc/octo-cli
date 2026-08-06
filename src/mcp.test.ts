@@ -51,6 +51,8 @@ describe('MCP tools', () => {
         'octo_metrics_point',
         'octo_services_entries',
         'octo_rum_detail',
+        'octo_rum_aggregate',
+        'octo_events_aggregate',
         'octo_users_search',
         'octo_cases_create',
         'octo_cases_link',
@@ -431,6 +433,121 @@ describe('MCP tools', () => {
     expect(JSON.parse(calls[2].body)).toEqual({
       names: ['alice', 'bob'],
     });
+  });
+
+  it('dispatches RUM and event aggregate tools', async () => {
+    const client = testClient();
+    const calls = captureFetch();
+
+    await handleMcpTool(
+      'octo_rum_aggregate',
+      {
+        env: 'test',
+        from: 1000,
+        to: 2000,
+        aggregation_field: 'view.loading_time',
+        aggregation_op: 'p95',
+        group_by: 'view.name',
+        group_limit: 5,
+      },
+      client
+    );
+    await handleMcpTool(
+      'octo_events_aggregate',
+      { env: 'online', from: 3000, to: 4000 },
+      client
+    );
+
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/rum/aggregate'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      env: 'test',
+      from: 1000,
+      to: 2000,
+      aggregationField: [{ field: 'view.loading_time', operation: 'p95' }],
+      groupFieldList: [
+        {
+          field: 'view.name',
+          limit: 5,
+          sort: {
+            field: 'view.loading_time',
+            operation: 'p95',
+            order: 'desc',
+          },
+        },
+      ],
+    });
+    expect(calls[1].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/event/aggregate'
+    );
+    expect(JSON.parse(calls[1].body)).toEqual({
+      env: 'online',
+      from: 3000,
+      to: 4000,
+      aggregationField: [{ field: '*', operation: 'count' }],
+    });
+  });
+
+  it.each([
+    'octo_logs_aggregate',
+    'octo_trace_aggregate',
+    'octo_rum_aggregate',
+    'octo_events_aggregate',
+  ])(
+    '%s rejects a non-numeric group limit before sending a request',
+    async (tool) => {
+      const client = testClient();
+      const calls = captureFetch();
+
+      const result = await handleMcpTool(
+        tool,
+        { group_by: 'type', group_limit: 'abc' },
+        client
+      );
+
+      expect(result).toEqual({
+        content: [
+          {
+            type: 'text',
+            text: 'Error: group_limit must be a positive integer, received "abc"',
+          },
+        ],
+        isError: true,
+      });
+      expect(calls).toHaveLength(0);
+    }
+  );
+
+  it.each([null, Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5, '', '1.5'])(
+    'rejects malformed MCP group limit %s',
+    async (groupLimit) => {
+      const client = testClient();
+      const calls = captureFetch();
+
+      const result = await handleMcpTool(
+        'octo_events_aggregate',
+        { group_by: 'type', group_limit: groupLimit },
+        client
+      );
+
+      expect(result).toHaveProperty('isError', true);
+      expect(calls).toHaveLength(0);
+    }
+  );
+
+  it('accepts a numeric string MCP group limit', async () => {
+    const client = testClient();
+    const calls = captureFetch();
+
+    const result = await handleMcpTool(
+      'octo_events_aggregate',
+      { group_by: 'type', group_limit: '5' },
+      client
+    );
+
+    expect(result).not.toHaveProperty('isError');
+    expect(JSON.parse(calls[0].body).groupFieldList[0].limit).toBe(5);
   });
 
   it('defaults service entries to the CLI 1h time window', async () => {

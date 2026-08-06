@@ -687,6 +687,21 @@ export class OctoClient {
     return this.post('/infra-octopus-openapi/v1/event/list', params);
   }
 
+  async eventAggregate(params: {
+    env: string;
+    from: number;
+    to: number;
+    query?: string;
+    aggregationField?: { field: string; operation: string }[];
+    groupFieldList?: {
+      field: string;
+      limit?: number;
+      sort?: { field: string; operation: string; order: string };
+    }[];
+  }) {
+    return this.post('/infra-octopus-openapi/v1/event/aggregate', params);
+  }
+
   // --- Dashboard ---
 
   async dashboardCreate(data: unknown) {
