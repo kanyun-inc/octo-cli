@@ -435,6 +435,46 @@ describe('OctoClient issue merge methods', () => {
   });
 });
 
+describe('OctoClient issue AI analysis', () => {
+  const client = new OctoClient('https://example.com', {
+    token: 'test-token',
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('starts analysis with optional context and encodes the Issue ID', async () => {
+    const calls = captureFetch();
+
+    await client.issueAiAnalysis(' issue/1 ', '发布后开始报错');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/issue%2F1/ai-analysis'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({ context: '发布后开始报错' });
+  });
+
+  it('omits the request body when no context is provided', async () => {
+    const calls = captureFetch();
+
+    await client.issueAiAnalysis('issue-1');
+
+    expect(calls[0].body).toBe('');
+  });
+
+  it('rejects a blank Issue ID before sending a request', async () => {
+    const calls = captureFetch();
+
+    await expect(client.issueAiAnalysis(' ')).rejects.toThrow(
+      'issueId must not be blank'
+    );
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe('normalizeAlertScope', () => {
   it('accepts the canonical lowercase values', () => {
     expect(normalizeAlertScope('all')).toBe('all');

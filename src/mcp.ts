@@ -677,6 +677,26 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_issues_ai_analysis',
+      description:
+        'Start AI analysis for an Octopus log Issue. RUM Issues are not supported. Results are delivered through WeCom; OpenAPI has no status or result query endpoint, and the REST session lookup requires SSO, so treat the returned sessionId as a correlation identifier only. Safe to retry while an analysis is running because the backend running_key idempotency guard deduplicates repeated requests.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          issueId: {
+            type: 'string',
+            minLength: 1,
+            description: 'Log Issue ID',
+          },
+          context: {
+            type: 'string',
+            description: 'Optional additional context for the AI analysis',
+          },
+        },
+        required: ['issueId'],
+      },
+    },
+    {
       name: 'octo_issues_assign',
       description: 'Batch assign Octopus error tracking issues to a user.',
       inputSchema: {
@@ -1473,6 +1493,14 @@ export async function handleMcpTool(
 
       case 'octo_issues_detail': {
         const data = await client.issueDetail(String(args.issueId));
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_ai_analysis': {
+        const data = await client.issueAiAnalysis(
+          String(args.issueId ?? ''),
+          args.context as string | undefined
+        );
         return ok(JSON.stringify(data, null, 2));
       }
 

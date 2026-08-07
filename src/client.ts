@@ -372,6 +372,17 @@ export class OctoClient {
     );
   }
 
+  async issueAiAnalysis(
+    issueId: string,
+    context?: string
+  ): Promise<{ sessionId: string }> {
+    const normalizedIssueId = normalizeIssueId(issueId, 'issueId');
+    return this.post<{ sessionId: string }>(
+      `/infra-octopus-openapi/v1/log-error-tracking/issues/${encodeURIComponent(normalizedIssueId)}/ai-analysis`,
+      context === undefined ? undefined : { context }
+    );
+  }
+
   async issuesBatchAssign(params: {
     assigneeId: number;
     dataSource: string;

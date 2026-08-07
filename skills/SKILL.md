@@ -264,6 +264,11 @@ npx octo-cli issues search -q "service = myapp" --status unresolved
 # Detail
 npx octo-cli issues detail <issueId>
 
+# Start AI analysis for a log Issue; RUM Issues are not supported
+# Results arrive via WeCom; sessionId is correlation-only and cannot be queried via OpenAPI
+# Safe to retry while running: backend running_key idempotency deduplicates requests
+npx octo-cli issues ai-analysis <issueId> --context "发布后开始报错"
+
 # Manage
 npx octo-cli issues assign --user 123 --ids id1,id2
 npx octo-cli issues update --ids id1,id2 -s resolved

@@ -42,6 +42,7 @@ describe('MCP tools', () => {
     expect(toolNames).toEqual(
       expect.arrayContaining([
         'octo_issues_detail',
+        'octo_issues_ai_analysis',
         'octo_issues_assign',
         'octo_issues_update',
         'octo_issues_merge',
@@ -64,6 +65,20 @@ describe('MCP tools', () => {
     const atProp = metricsPoint?.inputSchema.properties.at;
     expect(atProp).toBeDefined();
     expect((atProp as { type: string[] }).type).toEqual(['number', 'string']);
+
+    const issueAiAnalysis = tools.find(
+      (tool) => tool.name === 'octo_issues_ai_analysis'
+    );
+    expect(issueAiAnalysis?.description).toContain(
+      'OpenAPI has no status or result query endpoint'
+    );
+    expect(issueAiAnalysis?.description).toContain(
+      'REST session lookup requires SSO'
+    );
+    expect(issueAiAnalysis?.description).toContain(
+      'correlation identifier only'
+    );
+    expect(issueAiAnalysis?.description).toContain('Safe to retry');
   });
 
   it('dispatches issue detail, assign, and update tools', async () => {
@@ -106,6 +121,38 @@ describe('MCP tools', () => {
       issueIds: ['ISSUE-1'],
       status: 'resolved',
     });
+  });
+
+  it('dispatches Issue AI analysis and returns the session ID', async () => {
+    const client = testClient();
+    const calls = captureFetch({ sessionId: 'session-1' });
+
+    const result = await handleMcpTool(
+      'octo_issues_ai_analysis',
+      { issueId: 'ISSUE-1', context: '发布后开始报错' },
+      client
+    );
+
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/ISSUE-1/ai-analysis'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({ context: '发布后开始报错' });
+    expect(result.content[0].text).toContain('"sessionId": "session-1"');
+  });
+
+  it('rejects Issue AI analysis with a blank Issue ID before HTTP', async () => {
+    const client = testClient();
+    const calls = captureFetch();
+
+    const result = await handleMcpTool(
+      'octo_issues_ai_analysis',
+      { issueId: ' ' },
+      client
+    );
+
+    expect(result.content[0].text).toContain('issueId must not be blank');
+    expect(calls).toHaveLength(0);
   });
 
   it('dispatches the issue merge lifecycle tools', async () => {
