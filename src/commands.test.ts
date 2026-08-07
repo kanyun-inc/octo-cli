@@ -35,6 +35,33 @@ describe('commands', () => {
     ).rejects.toThrow("required option '--token <token>' not specified");
   });
 
+  it('keeps Issue AI analysis list text concise and details its result flow', () => {
+    const program = new Command();
+    registerCommands(program);
+
+    const issues = program.commands.find(
+      (command) => command.name() === 'issues'
+    );
+    const aiAnalysis = issues?.commands.find(
+      (command) => command.name() === 'ai-analysis'
+    );
+    const description = aiAnalysis?.description() ?? '';
+    let help = '';
+    aiAnalysis?.configureOutput({
+      writeOut: (text) => {
+        help += text;
+      },
+    });
+    aiAnalysis?.outputHelp();
+
+    expect(description).toBe(
+      'Start AI analysis for a log Issue (RUM Issues are not supported)'
+    );
+    expect(help).toContain('delivered through WeCom');
+    expect(help).toContain('correlation\nonly');
+    expect(help).toContain('Safe to retry');
+  });
+
   it('issues update maps TIME ignore rule into request payload', async () => {
     vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
     vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
@@ -88,6 +115,56 @@ describe('commands', () => {
       },
     });
     expect(logs).toContain('Issues updated');
+  });
+
+  it('issues ai-analysis starts analysis with context and prints the session ID', async () => {
+    vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+    vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+    const calls: { url: string; method: string; body: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: String(init.body ?? ''),
+        });
+        return new Response(
+          JSON.stringify({
+            code: 0,
+            data: { sessionId: 'session-1' },
+            message: 'ok',
+          })
+        );
+      })
+    );
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((message?: unknown) => {
+      logs.push(String(message));
+    });
+
+    const program = new Command();
+    program.exitOverride();
+    registerCommands(program);
+    await program.parseAsync(
+      [
+        'node',
+        'octo',
+        'issues',
+        'ai-analysis',
+        'ISSUE-1',
+        '--context',
+        '发布后开始报错',
+      ],
+      { from: 'node' }
+    );
+
+    expect(calls[0]).toEqual({
+      url: 'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/ISSUE-1/ai-analysis',
+      method: 'POST',
+      body: JSON.stringify({ context: '发布后开始报错' }),
+    });
+    expect(JSON.parse(logs[0])).toEqual({ sessionId: 'session-1' });
   });
 
   it('issues merge lifecycle commands call OpenAPI and print JSON', async () => {

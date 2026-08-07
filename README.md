@@ -160,6 +160,8 @@ octo-cli alerts enable <disableId>                        # 删除停用记录�
 ```bash
 octo-cli issues search --status unresolved -l 1h         # 未解决的 Issue
 octo-cli issues detail <issueId>                          # Issue 详情
+octo-cli issues ai-analysis <issueId> \
+  --context "发布后开始报错"                              # 启动 AI 分析并返回 sessionId
 octo-cli issues assign --user 123 --ids id1,id2          # 分配 Issue
 octo-cli issues update --ids id1,id2 -s resolved          # 解决 Issue
 octo-cli issues merge --ids id1,id2                       # 合并 Issue，返回 mergeIssueId
@@ -185,6 +187,8 @@ octo-cli issues update --ids id1,id2 -s ignored \
 
 octo-cli issues update --ids id1,id2 -s unresolved       # 取消忽略
 ```
+
+`issues ai-analysis` 返回的 `sessionId` 仅用于关联分析任务。OpenAPI 没有查询分析状态或结果的接口，REST 会话查询接口需要 SSO，不能使用 OpenAPI token；分析结果最终通过企微通知。任务运行期间可安全重试，后端会通过 `running_key` 幂等保护避免重复执行。
 
 ### Case
 
@@ -240,6 +244,7 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `alerts silence` / `alerts unsilence` | 创建 / 解除告警静默（抑制单条告警通知） |
 | `alerts disable` / `alerts disables` / `alerts enable` | 停用规则 / 查看停用记录 / 删除停用记录 |
 | `issues search` / `issues detail` | 搜索 Issue / Issue 详情 |
+| `issues ai-analysis` | 启动日志 Issue AI 分析；结果通过企微通知，sessionId 仅用于关联；不支持 RUM Issue |
 | `issues assign` / `issues update` | 批量分配 / 批量更新 Issue 状态 |
 | `issues merge` / `issues unmerge` / `issues merge-children` | 合并 / 移出 child / 查询合并关系 |
 | `cases list` / `cases create` | 查询 / 创建 Case |
@@ -325,6 +330,7 @@ npx octo-cli mcp-install
 | `octo_alerts_rule_disable_create` | 停用告警规则（规则本身不再检测） |
 | `octo_alerts_rule_disable_list` / `octo_alerts_rule_disable_delete` | 查看 / 删除停用记录 |
 | `octo_issues_search` / `octo_issues_detail` | 搜索 Issue / Issue 详情 |
+| `octo_issues_ai_analysis` | 启动日志 Issue AI 分析；结果通过企微通知，sessionId 仅用于关联；不支持 RUM Issue |
 | `octo_issues_assign` / `octo_issues_update` | 批量分配 / 批量更新 Issue |
 | `octo_issues_merge` / `octo_issues_unmerge` | 合并 Issue / 从 merge Issue 移出 child |
 | `octo_issues_merge_children` | 查询 merge children 或 frozen child 的 canonical parent |
@@ -393,7 +399,7 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 |------|------|
 | 日志 | `/v1/logs/search`、`/v1/logs/aggregate` |
 | 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules/groups`、`/v1/alert/rules/details/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
-| Issue | `/v1/log-error-tracking/issues/*`（含 merge / unmerge / merge-children） |
+| Issue | `/v1/log-error-tracking/issues/*`（含 ai-analysis / merge / unmerge / merge-children） |
 | Case | `/v1/cases/*`、`/v1/cases/groups/*` |
 | 链路 | `/v1/trace/span/list`、`/v1/trace/aggregate` |
 | 指标 | `/v1/metrics/query/timeseries`、`/v1/metrics/query/queryMetric` |

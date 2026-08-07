@@ -439,15 +439,19 @@ public class OctopusOpenapiClient {
 
 ### 6.2 Issue 详情 `GET /infra-octopus-openapi/v1/log-error-tracking/issues/{issueId}`
 
-### 6.3 多 Issue 分布 `POST .../issues/multi-distribution`
+### 6.3 启动 Issue AI 分析 `POST /infra-octopus-openapi/v1/log-error-tracking/issues/{issueId}/ai-analysis`
+
+仅支持 Log Issue。请求体可省略，也可传 `{"context":"发布后开始报错"}` 补充分析上下文；响应 `data.sessionId` 仅用于关联分析任务。OpenAPI 没有查询分析状态或结果的接口，REST 的 `GET /{sessionId}` 会话查询接口需要 SSO，不能使用 OpenAPI token；分析结果最终通过企微通知。任务运行期间重复调用是安全的，后端通过 `running_key` 做幂等保护。
+
+### 6.4 多 Issue 分布 `POST .../issues/multi-distribution`
 
 请求为 **数组**；每项含 `issueIds`、`env`、`from`、`to`、`interval`、`query`、`dataSource`（log/rum）等。
 
-### 6.4 批量分配 `POST .../issues/batch-assign`
+### 6.5 批量分配 `POST .../issues/batch-assign`
 
 `assigneeId`、`dataSource`、`issueIds`。
 
-### 6.5 批量更新状态 `PUT .../issues/batch-update`
+### 6.6 批量更新状态 `PUT .../issues/batch-update`
 
 `issueIds`、`status`、`env`、`dataSource`；将状态置为 **ignored** 时需传 `ignoreRule`（`type`：time / appearCount / userCount 等及子结构），见官方子文档示例。
 

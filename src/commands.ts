@@ -728,6 +728,24 @@ export function registerCommands(program: Command): void {
     });
 
   issues
+    .command('ai-analysis')
+    .description(
+      'Start AI analysis for a log Issue (RUM Issues are not supported)'
+    )
+    .addHelpText(
+      'after',
+      '\nResults are delivered through WeCom; the returned session ID is for correlation\nonly and cannot be queried with an OpenAPI token. Safe to retry while an analysis\nis running because the backend deduplicates repeated requests.'
+    )
+    .argument('<issueId>', 'Issue ID')
+    .option('--context <text>', 'Additional context for the AI analysis')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (issueId, opts) => {
+      const client = getClient();
+      const data = await client.issueAiAnalysis(issueId, opts.context);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  issues
     .command('assign')
     .description('Batch assign issues to a user')
     .requiredOption('--user <userId>', 'Assignee user ID')
