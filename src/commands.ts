@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
-import type { Command } from 'commander';
+import { type Command, InvalidArgumentError } from 'commander';
+import { parsePositiveInteger } from './aggregate.js';
 import { normalizeAlertScope, OctoClient } from './client.js';
 import {
   getBaseUrl,
@@ -44,6 +45,94 @@ type IssueUpdateOptions = {
   startTimestamp?: string;
   timeWindowMs?: string;
 };
+
+type AggregateOptions = {
+  agg: AggregateField[];
+  group: AggregateGroup[];
+};
+
+type AggregateField = {
+  field: string;
+  operation: string;
+};
+
+type AggregateGroup = {
+  field: string;
+  limit: number;
+};
+
+function parseAggregateField(value: string): AggregateField {
+  const separator = value.indexOf(':');
+  if (separator !== -1 && value.indexOf(':', separator + 1) !== -1) {
+    throw new InvalidArgumentError('--agg must use <field[:operation]>');
+  }
+
+  const field = separator === -1 ? value : value.slice(0, separator);
+  const operation = separator === -1 ? 'count' : value.slice(separator + 1);
+  if (!field.trim()) {
+    throw new InvalidArgumentError('--agg field must not be empty');
+  }
+  if (!operation.trim()) {
+    throw new InvalidArgumentError('--agg operation must not be empty');
+  }
+  return { field, operation };
+}
+
+function collectAggregateField(
+  value: string,
+  fields: AggregateField[]
+): AggregateField[] {
+  return [...fields, parseAggregateField(value)];
+}
+
+function parseAggregateGroup(value: string): AggregateGroup {
+  const separator = value.indexOf(':');
+  const field = separator === -1 ? value : value.slice(0, separator);
+  const limit = separator === -1 ? undefined : value.slice(separator + 1);
+  if (!field) {
+    throw new InvalidArgumentError('--group field must not be empty');
+  }
+
+  try {
+    return {
+      field,
+      limit:
+        limit === undefined ? 10 : parsePositiveInteger(limit, '--group limit'),
+    };
+  } catch (error) {
+    throw new InvalidArgumentError(
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+function collectAggregateGroup(
+  value: string,
+  groups: AggregateGroup[]
+): AggregateGroup[] {
+  return [...groups, parseAggregateGroup(value)];
+}
+
+function buildAggregateFields(opts: AggregateOptions) {
+  const aggregationFields = opts.agg.length
+    ? opts.agg
+    : [{ field: '*', operation: 'count' }];
+  const [sortAggregation] = aggregationFields;
+
+  const groupFields = opts.group.map(({ field, limit }) => {
+    return {
+      field,
+      limit,
+      sort: {
+        field: sortAggregation.field,
+        operation: sortAggregation.operation,
+        order: 'desc',
+      },
+    };
+  });
+
+  return { aggregationFields, groupFields };
+}
 
 function parseEpochMsOrIso(value: string, flagName: string): number {
   if (/^\d+$/.test(value)) {
@@ -289,37 +378,22 @@ export function registerCommands(program: Command): void {
     .option('--from <time>', 'Start time')
     .option('--to <time>', 'End time')
     .option(
-      '-a, --agg <field:op>',
+      '-a, --agg <field[:op]>',
       'Aggregation (e.g. *:count)',
-      (v: string, arr: string[]) => [...arr, v],
-      [] as string[]
+      collectAggregateField,
+      [] as AggregateField[]
     )
     .option(
       '-g, --group <field[:limit]>',
       'Group by field',
-      (v: string, arr: string[]) => [...arr, v],
-      [] as string[]
+      collectAggregateGroup,
+      [] as AggregateGroup[]
     )
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (opts) => {
+      const { aggregationFields, groupFields } = buildAggregateFields(opts);
       const client = getClient();
       const { from, to } = resolveTimeRange(opts);
-
-      const aggregationFields = opts.agg.length
-        ? opts.agg.map((a: string) => {
-            const [field, operation = 'count'] = a.split(':');
-            return { field, operation };
-          })
-        : [{ field: '*', operation: 'count' }];
-
-      const groupFields = opts.group.map((g: string) => {
-        const [field, limitStr] = g.split(':');
-        return {
-          field,
-          limit: limitStr ? Number.parseInt(limitStr, 10) : 10,
-          sort: { field: '*', operation: 'count', order: 'desc' },
-        };
-      });
 
       const data = await client.logsAggregate({
         env: opts.env ?? getDefaultEnv(),
@@ -1006,37 +1080,22 @@ export function registerCommands(program: Command): void {
     .option('--from <time>', 'Start time')
     .option('--to <time>', 'End time')
     .option(
-      '-a, --agg <field:op>',
+      '-a, --agg <field[:op]>',
       'Aggregation',
-      (v: string, arr: string[]) => [...arr, v],
-      [] as string[]
+      collectAggregateField,
+      [] as AggregateField[]
     )
     .option(
       '-g, --group <field[:limit]>',
       'Group by',
-      (v: string, arr: string[]) => [...arr, v],
-      [] as string[]
+      collectAggregateGroup,
+      [] as AggregateGroup[]
     )
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (opts) => {
+      const { aggregationFields, groupFields } = buildAggregateFields(opts);
       const client = getClient();
       const { from, to } = resolveTimeRange(opts);
-
-      const aggregationFields = opts.agg.length
-        ? opts.agg.map((a: string) => {
-            const [field, operation = 'count'] = a.split(':');
-            return { field, operation };
-          })
-        : [{ field: '*', operation: 'count' }];
-
-      const groupFields = opts.group.map((g: string) => {
-        const [field, limitStr] = g.split(':');
-        return {
-          field,
-          limit: limitStr ? Number.parseInt(limitStr, 10) : 10,
-          sort: { field: '*', operation: 'count', order: 'desc' },
-        };
-      });
 
       const data = await client.traceAggregate({
         env: opts.env ?? getDefaultEnv(),
@@ -1234,9 +1293,47 @@ export function registerCommands(program: Command): void {
       printOutput(data, opts.output as OutputFormat);
     });
 
+  rum
+    .command('aggregate')
+    .description('Aggregate RUM events')
+    .option('-q, --query <query>', 'Query string')
+    .option('-e, --env <env>', 'Environment')
+    .option('-l, --last <duration>', 'Time range', '1h')
+    .option('--from <time>', 'Start time')
+    .option('--to <time>', 'End time')
+    .option(
+      '-a, --agg <field[:op]>',
+      'Aggregation (e.g. *:count)',
+      collectAggregateField,
+      [] as AggregateField[]
+    )
+    .option(
+      '-g, --group <field[:limit]>',
+      'Group by field',
+      collectAggregateGroup,
+      [] as AggregateGroup[]
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const { aggregationFields, groupFields } = buildAggregateFields(opts);
+      const client = getClient();
+      const { from, to } = resolveTimeRange(opts);
+      const data = await client.rumAggregate({
+        env: opts.env ?? getDefaultEnv(),
+        from,
+        to,
+        query: opts.query,
+        aggregationField: aggregationFields,
+        groupFieldList: groupFields.length ? groupFields : undefined,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
   // ─── events ──────────────────────────────────────────────
-  program
-    .command('events')
+  const events = program.command('events').description('Event operations');
+
+  events
+    .command('list', { isDefault: true })
     .description('Query events')
     .option('-q, --query <query>', 'Query string')
     .option('-e, --env <env>', 'Environment')
@@ -1254,6 +1351,42 @@ export function registerCommands(program: Command): void {
         to,
         query: opts.query,
         pageSize: Number.parseInt(opts.limit, 10),
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  events
+    .command('aggregate')
+    .description('Aggregate events')
+    .option('-q, --query <query>', 'Query string')
+    .option('-e, --env <env>', 'Environment')
+    .option('-l, --last <duration>', 'Time range', '1h')
+    .option('--from <time>', 'Start time')
+    .option('--to <time>', 'End time')
+    .option(
+      '-a, --agg <field[:op]>',
+      'Aggregation (e.g. *:count)',
+      collectAggregateField,
+      [] as AggregateField[]
+    )
+    .option(
+      '-g, --group <field[:limit]>',
+      'Group by field',
+      collectAggregateGroup,
+      [] as AggregateGroup[]
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const { aggregationFields, groupFields } = buildAggregateFields(opts);
+      const client = getClient();
+      const { from, to } = resolveTimeRange(opts);
+      const data = await client.eventAggregate({
+        env: opts.env ?? getDefaultEnv(),
+        from,
+        to,
+        query: opts.query,
+        aggregationField: aggregationFields,
+        groupFieldList: groupFields.length ? groupFields : undefined,
       });
       printOutput(data, opts.output as OutputFormat);
     });

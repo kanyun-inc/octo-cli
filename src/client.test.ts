@@ -733,4 +733,32 @@ describe('OctoClient case methods', () => {
     expect(JSON.parse(calls[0].body)).toEqual({ name: 'incident cases' });
     vi.restoreAllMocks();
   });
+
+  it('RUM and event aggregation use their OpenAPI request fields', async () => {
+    const calls = captureFetch();
+    const params = {
+      env: 'test',
+      from: 1000,
+      to: 2000,
+      aggregationField: [{ field: '*', operation: 'count' }],
+      groupFieldList: [
+        {
+          field: 'type',
+          limit: 5,
+          sort: { field: '*', operation: 'count', order: 'desc' },
+        },
+      ],
+    };
+
+    await client.rumAggregate(params);
+    await client.eventAggregate(params);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://example.com/infra-octopus-openapi/v1/rum/aggregate',
+      'https://example.com/infra-octopus-openapi/v1/event/aggregate',
+    ]);
+    expect(JSON.parse(calls[0].body)).toEqual(params);
+    expect(JSON.parse(calls[1].body)).toEqual(params);
+    vi.restoreAllMocks();
+  });
 });
