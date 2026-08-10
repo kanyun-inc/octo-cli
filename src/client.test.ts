@@ -802,3 +802,51 @@ describe('OctoClient case methods', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('OctoClient inspection methods', () => {
+  const client = new OctoClient('https://example.com', {
+    token: 'test-token',
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('inspectionReportsSearch posts filter and pagination fields', async () => {
+    const calls = captureFetch();
+    await client.inspectionReportsSearch({
+      pageNo: 2,
+      pageSize: 20,
+      keyword: 'db',
+      taskId: 7,
+      taskGroupName: 'infra-db',
+      result: 'abnormal',
+      startCreateTime: 1000,
+      endCreateTime: 2000,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/inspection/reports/search'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      pageNo: 2,
+      pageSize: 20,
+      keyword: 'db',
+      taskId: 7,
+      taskGroupName: 'infra-db',
+      result: 'abnormal',
+      startCreateTime: 1000,
+      endCreateTime: 2000,
+    });
+  });
+
+  it('inspectionReportsSearch omits unset optional fields', async () => {
+    const calls = captureFetch();
+    await client.inspectionReportsSearch({ pageNo: 1, pageSize: 10 });
+
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0].body)).toEqual({ pageNo: 1, pageSize: 10 });
+  });
+});

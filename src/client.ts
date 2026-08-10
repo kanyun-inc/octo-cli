@@ -533,6 +533,24 @@ export class OctoClient {
     return this.post('/infra-octopus-openapi/v1/cases/groups', params);
   }
 
+  // --- Inspection ---
+
+  async inspectionReportsSearch(params: {
+    pageNo: number;
+    pageSize: number;
+    keyword?: string;
+    taskId?: number;
+    taskGroupName?: string;
+    result?: string;
+    startCreateTime?: number;
+    endCreateTime?: number;
+  }) {
+    return this.post(
+      '/infra-octopus-openapi/v1/inspection/reports/search',
+      params
+    );
+  }
+
   // --- Trace ---
 
   async traceSpanList(params: {
