@@ -296,6 +296,16 @@ npx octo-cli cases note <caseId> --text "owner notified"
 npx octo-cli cases groups
 ```
 
+### Inspection Reports
+
+```bash
+# Search inspection reports (keyword matches report or task name)
+npx octo-cli inspection reports -q db
+npx octo-cli inspection reports --result abnormal -l 1d          # abnormal reports in last day
+npx octo-cli inspection reports --task-id 7 --page 2 -n 20       # by task ID, paginated
+npx octo-cli inspection reports --task-group infra-db            # by task group (user-visible name, not ID)
+```
+
 ### Traces
 
 ```bash

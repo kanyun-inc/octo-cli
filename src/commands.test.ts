@@ -1041,4 +1041,83 @@ describe('commands', () => {
       expect(calls).toHaveLength(0);
     });
   });
+
+  describe('inspection reports', () => {
+    function setupCli() {
+      vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+      vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+      const calls: { url: string; method: string; body: string }[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init: RequestInit) => {
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: String(init.body ?? ''),
+          });
+          return new Response(
+            JSON.stringify({ code: 0, data: [], message: 'ok' })
+          );
+        })
+      );
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const program = new Command();
+      program.exitOverride();
+      registerCommands(program);
+      return { calls, program };
+    }
+
+    it('reports forwards filters and pagination', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'inspection',
+          'reports',
+          '--query',
+          'db',
+          '--task-id',
+          '7',
+          '--task-group',
+          'infra-db',
+          '--result',
+          'abnormal',
+          '--page',
+          '2',
+          '--limit',
+          '20',
+        ],
+        { from: 'node' }
+      );
+
+      expect(calls[0].method).toBe('POST');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/inspection/reports/search'
+      );
+      expect(JSON.parse(calls[0].body)).toEqual({
+        pageNo: 2,
+        pageSize: 20,
+        keyword: 'db',
+        taskId: 7,
+        taskGroupName: 'infra-db',
+        result: 'abnormal',
+      });
+    });
+
+    it('reports defaults pagination and omits unset filters', async () => {
+      const { calls, program } = setupCli();
+
+      await program.parseAsync(['node', 'octo', 'inspection', 'reports'], {
+        from: 'node',
+      });
+
+      expect(calls[0].method).toBe('POST');
+      expect(JSON.parse(calls[0].body)).toEqual({
+        pageNo: 1,
+        pageSize: 10,
+      });
+    });
+  });
 });

@@ -1263,6 +1263,43 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_inspection_report_search',
+      description:
+        'Search Octopus inspection reports. Filter by keyword (report/task name), task ID, task group name, result (normal/abnormal), and create time range. Returns reports with their inspection item details.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          keyword: {
+            type: 'string',
+            description: 'Keyword matching report name or task name',
+          },
+          taskId: { type: 'number', description: 'Inspection task ID' },
+          taskGroupName: {
+            type: 'string',
+            description: 'Task group name (the user-visible name, not the ID)',
+          },
+          result: {
+            type: 'string',
+            description: 'Report result filter',
+            enum: ['normal', 'abnormal'],
+          },
+          startCreateTime: {
+            type: 'number',
+            description: 'Create time range start in epoch milliseconds',
+          },
+          endCreateTime: {
+            type: 'number',
+            description: 'Create time range end in epoch milliseconds',
+          },
+          limit: {
+            type: 'number',
+            description: 'Page size (default 10, max 50)',
+          },
+          pageNo: { type: 'number', description: 'Page number (default 1)' },
+        },
+      },
+    },
+    {
       name: 'octo_users_search',
       description: 'Search Octopus users by names.',
       inputSchema: {
@@ -1853,6 +1890,21 @@ export async function handleMcpTool(
 
       case 'octo_users_search': {
         const data = await client.usersSearch(args.names as string[]);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_inspection_report_search': {
+        const rawLimit = args.limit as number | undefined;
+        const data = await client.inspectionReportsSearch({
+          pageNo: (args.pageNo as number) ?? 1,
+          pageSize: rawLimit ? Math.min(rawLimit, 50) : 10,
+          keyword: args.keyword as string | undefined,
+          taskId: args.taskId as number | undefined,
+          taskGroupName: args.taskGroupName as string | undefined,
+          result: args.result as string | undefined,
+          startCreateTime: args.startCreateTime as number | undefined,
+          endCreateTime: args.endCreateTime as number | undefined,
+        });
         return ok(JSON.stringify(data, null, 2));
       }
 

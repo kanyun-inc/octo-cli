@@ -57,6 +57,7 @@ describe('MCP tools', () => {
         'octo_users_search',
         'octo_cases_create',
         'octo_cases_link',
+        'octo_inspection_report_search',
       ])
     );
     const metricsPoint = tools.find(
@@ -924,6 +925,56 @@ describe('MCP tools', () => {
       const body = JSON.parse(calls[0].body);
       expect(body.alertRuleType).toBe('metric');
       expect(body.pageNo).toBe(3);
+    });
+  });
+
+  describe('inspection report search tool', () => {
+    it('forwards filters and pagination', async () => {
+      const calls = captureFetch([]);
+
+      await handleMcpTool(
+        'octo_inspection_report_search',
+        {
+          keyword: 'db',
+          taskId: 7,
+          taskGroupName: 'infra-db',
+          result: 'abnormal',
+          startCreateTime: 1000,
+          endCreateTime: 2000,
+          limit: 20,
+          pageNo: 2,
+        },
+        testClient()
+      );
+
+      expect(calls[0].method).toBe('POST');
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/inspection/reports/search'
+      );
+      expect(JSON.parse(calls[0].body)).toEqual({
+        keyword: 'db',
+        taskId: 7,
+        taskGroupName: 'infra-db',
+        result: 'abnormal',
+        startCreateTime: 1000,
+        endCreateTime: 2000,
+        pageSize: 20,
+        pageNo: 2,
+      });
+    });
+
+    it('defaults pagination and caps page size at 50', async () => {
+      const calls = captureFetch([]);
+
+      await handleMcpTool(
+        'octo_inspection_report_search',
+        { limit: 200 },
+        testClient()
+      );
+
+      const body = JSON.parse(calls[0].body);
+      expect(body.pageNo).toBe(1);
+      expect(body.pageSize).toBe(50);
     });
   });
 });

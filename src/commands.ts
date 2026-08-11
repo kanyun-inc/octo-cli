@@ -1061,6 +1061,47 @@ export function registerCommands(program: Command): void {
       console.log('Case group created');
     });
 
+  // ─── inspection ──────────────────────────────────────────
+  const inspection = program
+    .command('inspection')
+    .description('Inspection report operations');
+
+  inspection
+    .command('reports')
+    .description('Search inspection reports')
+    .option(
+      '-q, --query <keyword>',
+      'Keyword matching report name or task name'
+    )
+    .option('--task-id <id>', 'Inspection task ID')
+    .option(
+      '--task-group <name>',
+      'Task group name (user-visible name, not ID)'
+    )
+    .option('-r, --result <result>', 'Report result: normal or abnormal')
+    .option('-l, --last <duration>', 'Time range, e.g. 15m, 1h, 2d')
+    .option('--from <time>', 'Create time start (epoch ms or ISO)')
+    .option('--to <time>', 'Create time end (epoch ms or ISO)')
+    .option('--page <n>', 'Page number', '1')
+    .option('-n, --limit <n>', 'Page size (default 10, max 50)', '10')
+    .option('-o, --output <fmt>', 'Output: json, table, jsonl', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const range =
+        opts.last || opts.from || opts.to ? resolveTimeRange(opts) : undefined;
+      const data = await client.inspectionReportsSearch({
+        pageNo: Number.parseInt(opts.page, 10),
+        pageSize: Number.parseInt(opts.limit, 10),
+        keyword: opts.query,
+        taskId: opts.taskId ? Number.parseInt(opts.taskId, 10) : undefined,
+        taskGroupName: opts.taskGroup,
+        result: opts.result,
+        startCreateTime: range?.from,
+        endCreateTime: range?.to,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
   // ─── trace ───────────────────────────────────────────────
   const trace = program.command('trace').description('Trace operations');
 

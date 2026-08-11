@@ -26,6 +26,7 @@ tags:
 | [指标](#五指标查询相关接口) | timeseries / queryMetric，及 [V2.0](#指标接口-v20) |
 | [错误追踪](#六错误追踪相关接口) | Issue 查询、详情、分布、分配、状态与 `ignoreRule` |
 | [Case](#七case-相关接口) | Case 列表、详情、创建更新、关系、备注、分组 |
+| [巡检](#巡检查询相关接口) | 巡检报告搜索 |
 | [告警](#八告警查询相关接口) | 告警查询、规则 CRUD、静默 |
 | [服务 APM](#九服务查询相关接口) | 入口/上下游/拓扑/时序等 |
 | [大盘](#十大盘相关接口) | 创建 / 更新大盘 |
@@ -641,6 +642,23 @@ Query 参数：`from`（必填，epoch ms）、`to`（必填，epoch ms）、`co
 ### Event 聚合 `POST /infra-octopus-openapi/v1/event/aggregate`
 
 请求使用 `aggregationField` 指定聚合字段与操作，使用 `groupFieldList` 指定分组字段、数量上限和排序方式。
+
+---
+
+## 巡检查询相关接口
+
+### 巡检报告搜索 `POST /infra-octopus-openapi/v1/inspection/reports/search`
+
+按条件搜索巡检报告，返回报告及其巡检项详情。请求字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `keyword` | string | 关键词，匹配报告名或任务名 |
+| `taskId` | number | 巡检任务 ID |
+| `taskGroupName` | string | 任务组名（用户可见名称，非 ID） |
+| `result` | string | 报告结果，`normal` 或 `abnormal` |
+| `startCreateTime` / `endCreateTime` | number | 创建时间范围（epoch 毫秒） |
+| `pageNo` / `pageSize` | number | 翻页，`pageSize` 默认 10、上限 50 |
 
 ---
 
