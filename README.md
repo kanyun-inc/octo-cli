@@ -200,6 +200,15 @@ octo-cli cases link <caseId> --type alert --target-id 123 # 关联告警
 octo-cli cases note <caseId> --text "已通知负责人"          # 添加备注
 ```
 
+### 巡检 (Inspection)
+
+```bash
+octo-cli inspection reports -q db                         # 按关键词搜索巡检报告
+octo-cli inspection reports --result abnormal -l 1d       # 近一天的异常报告
+octo-cli inspection reports --task-id 7 --page 2 -n 20    # 按任务 ID 翻页
+octo-cli inspection reports --task-group infra-db         # 按任务组名过滤
+```
+
 ### 链路 (Trace) / 指标 (Metrics)
 
 ```bash
@@ -253,6 +262,7 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `cases link` / `cases unlink` | 关联或取消关联告警/Issue |
 | `cases note` / `cases note-update` | 添加或修改 Case 备注 |
 | `cases groups` / `cases group-create` | 查询或创建 Case 分组 |
+| `inspection reports` | 搜索巡检报告（关键词 / 任务 / 任务组 / 结果 / 时间范围过滤） |
 | `trace search` / `trace aggregate` | 搜索链路 Span / 链路聚合 |
 | `metrics query` / `metrics point` | 指标时序查询 / 单点查询 |
 | `services list` / `services entries` / `services topo` | 服务列表 / 入口列表 / 拓扑图 |
@@ -340,6 +350,7 @@ npx octo-cli mcp-install
 | `octo_cases_link` / `octo_cases_unlink` | 关联或取消关联告警/Issue |
 | `octo_cases_note_add` / `octo_cases_note_update` | 添加或修改 Case 备注 |
 | `octo_cases_groups_all` / `octo_cases_group_create` | 查询或创建 Case 分组 |
+| `octo_inspection_report_search` | 搜索巡检报告（关键词 / 任务 / 任务组 / 结果 / 时间范围过滤） |
 | `octo_trace_search` / `octo_trace_aggregate` | 搜索链路 Span / 链路聚合 |
 | `octo_metrics_query` / `octo_metrics_point` | 指标时序 / 单点查询 |
 | `octo_services_list` / `octo_services_entries` / `octo_services_topology` | 服务列表 / 入口 / 拓扑 |
@@ -401,6 +412,7 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 | 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules/groups`、`/v1/alert/rules/details/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
 | Issue | `/v1/log-error-tracking/issues/*`（含 ai-analysis / merge / unmerge / merge-children） |
 | Case | `/v1/cases/*`、`/v1/cases/groups/*` |
+| 巡检 | `/v1/inspection/reports/search` |
 | 链路 | `/v1/trace/span/list`、`/v1/trace/aggregate` |
 | 指标 | `/v1/metrics/query/timeseries`、`/v1/metrics/query/queryMetric` |
 | 服务 | `/v1/apm/query/*`、`/v1/apm/topology/*` |
