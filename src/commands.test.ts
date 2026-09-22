@@ -35,6 +35,57 @@ describe('commands', () => {
     ).rejects.toThrow("required option '--token <token>' not specified");
   });
 
+  it('metrics query uses UTC+8 without shifting the requested range', async () => {
+    vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+    vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+    const calls: { url: string; method: string; body: string }[] = [];
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: String(init.body ?? ''),
+      });
+      return new Response(JSON.stringify({ code: 0, data: [], message: 'ok' }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const program = new Command();
+    registerCommands(program);
+    const query = 'as_count(sum(rollup(test.requests{}, sum, 1d)))';
+
+    await program.parseAsync(
+      [
+        'metrics',
+        'query',
+        query,
+        '--env',
+        'online',
+        '--from',
+        '2026-09-19T00:00:00+08:00',
+        '--to',
+        '2026-09-20T00:00:00+08:00',
+        '--points',
+        '10',
+      ],
+      { from: 'user' }
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/metrics/query/timeseries'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      env: 'online',
+      from: 1789747200000,
+      to: 1789833600000,
+      pointCount: 10,
+      queries: [{ id: 'A', query, dataSource: 'metric' }],
+      userUtcHour: 8,
+    });
+  });
+
   it('keeps Issue AI analysis list text concise and details its result flow', () => {
     const program = new Command();
     registerCommands(program);

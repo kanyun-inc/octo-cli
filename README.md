@@ -220,6 +220,8 @@ octo-cli metrics query "avg(cpu_usage{service=myapp})" --points 50  # 指定数�
 octo-cli metrics point "sum(error_count{}.as_count)"                 # 单点查询
 ```
 
+指标时序查询（`metrics query` / MCP `octo_metrics_query`）默认使用 UTC+8（北京时间）对齐日聚合边界，查询时间戳保持不变。
+
 ### 服务 / LLM / RUM / 事件 / 用户
 
 ```bash
