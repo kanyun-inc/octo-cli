@@ -1053,7 +1053,8 @@ export function getMcpTools() {
     {
       name: 'octo_metrics_query',
       description:
-        'Query Octopus metrics timeseries. Use metric query syntax like "sum(metric_name{tag=value}.as_count)".',
+        'Query Octopus metrics timeseries. Use metric query syntax like "sum(metric_name{tag=value}.as_count)". ' +
+        'Daily (1d) aggregation is aligned to midnight in UTC+8 (Beijing time).',
       inputSchema: {
         type: 'object' as const,
         properties: {

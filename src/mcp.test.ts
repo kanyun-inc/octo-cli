@@ -387,6 +387,37 @@ describe('MCP tools', () => {
     });
   });
 
+  it('metrics query uses UTC+8 without shifting the requested range', async () => {
+    const calls = captureFetch([]);
+    const query = 'as_count(sum(rollup(test.requests{}, sum, 1d)))';
+
+    const result = await handleMcpTool(
+      'octo_metrics_query',
+      {
+        env: 'online',
+        from: 1789747200000,
+        to: 1789833600000,
+        queries: [query],
+      },
+      testClient()
+    );
+
+    expect(result).toEqual({ content: [{ type: 'text', text: '[]' }] });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/metrics/query/timeseries'
+    );
+    expect(JSON.parse(calls[0].body)).toEqual({
+      env: 'online',
+      from: 1789747200000,
+      to: 1789833600000,
+      pointCount: 150,
+      queries: [{ id: 'A', query, dataSource: 'metric' }],
+      userUtcHour: 8,
+    });
+  });
+
   it('dispatches trace aggregate and metrics point tools', async () => {
     const client = testClient();
     const calls = captureFetch();

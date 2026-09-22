@@ -589,10 +589,10 @@ export class OctoClient {
     pointCount?: number;
     queries: { id: string; query: string; dataSource: string }[];
   }) {
-    return this.post(
-      '/infra-octopus-openapi/v1/metrics/query/timeseries',
-      params
-    );
+    return this.post('/infra-octopus-openapi/v1/metrics/query/timeseries', {
+      ...params,
+      userUtcHour: 8,
+    });
   }
 
   async metricsQuery(params: {
