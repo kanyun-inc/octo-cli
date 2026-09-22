@@ -1,5 +1,11 @@
 # octo-cli
 
+## 1.5.1
+
+### Patch Changes
+
+- 3fbd54d: 指标时序查询默认使用 UTC+8（北京时间）对齐日聚合边界，CLI 和内置 MCP 同时生效，查询时间戳保持不变。
+
 ## 1.5.0
 
 ### Minor Changes
