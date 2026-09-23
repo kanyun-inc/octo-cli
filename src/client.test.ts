@@ -850,3 +850,158 @@ describe('OctoClient inspection methods', () => {
     expect(JSON.parse(calls[0].body)).toEqual({ pageNo: 1, pageSize: 10 });
   });
 });
+
+describe('OctoClient event subscription methods', () => {
+  const client = new OctoClient('https://example.com', {
+    token: 'test-token',
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('event subscription methods use the event subscription endpoints', async () => {
+    const calls = captureFetch();
+
+    await client.eventSubscriptionsList({
+      keyword: 'payment',
+      environment: 'online',
+      status: 'ENABLED',
+      pageNo: 2,
+      pageSize: 50,
+    });
+    await client.eventSubscriptionDetail(11);
+    await client.eventSubscriptionCreate({
+      name: 'payment failures',
+      environment: 'online',
+      filter: 'type = payment.failed',
+      webhookId: 7,
+    });
+    await client.eventSubscriptionUpdate(11, {
+      name: 'payment failures v2',
+      description: 'notify payment agent',
+      filter: 'type = payment.failed',
+      webhookId: 8,
+    });
+    await client.eventSubscriptionUpdateStatus(11, 'DISABLED');
+    await client.eventSubscriptionDelete(11);
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        method: 'POST',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/search',
+        body: JSON.stringify({
+          keyword: 'payment',
+          environment: 'online',
+          status: 'ENABLED',
+          pageNo: 2,
+          pageSize: 50,
+        }),
+      }),
+      expect.objectContaining({
+        method: 'GET',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/11',
+        body: '',
+      }),
+      expect.objectContaining({
+        method: 'POST',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions',
+        body: JSON.stringify({
+          name: 'payment failures',
+          environment: 'online',
+          filter: 'type = payment.failed',
+          webhookId: 7,
+        }),
+      }),
+      expect.objectContaining({
+        method: 'PUT',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/11',
+        body: JSON.stringify({
+          name: 'payment failures v2',
+          description: 'notify payment agent',
+          filter: 'type = payment.failed',
+          webhookId: 8,
+        }),
+      }),
+      expect.objectContaining({
+        method: 'PUT',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/11/status',
+        body: JSON.stringify({ status: 'DISABLED' }),
+      }),
+      expect.objectContaining({
+        method: 'DELETE',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/11',
+        body: '',
+      }),
+    ]);
+    vi.restoreAllMocks();
+  });
+
+  it('event webhook methods preserve header maps and request templates', async () => {
+    const calls = captureFetch();
+    const webhook = {
+      name: 'agent webhook',
+      url: 'https://agent.example.com/events',
+      headers: { Authorization: 'Bearer test' },
+      requestFormat: 'CUSTOM' as const,
+      bodyTemplate: '{"eventId":"{{event.event_id}}"}',
+    };
+
+    await client.eventWebhooksList({
+      keyword: 'agent',
+      requestFormat: 'CUSTOM',
+      pageNo: 1,
+      pageSize: 20,
+    });
+    await client.eventWebhookDetail(7);
+    await client.eventWebhookCreate(webhook);
+    await client.eventWebhookUpdate(7, webhook);
+    await client.eventWebhookTest(webhook);
+    await client.eventWebhookDelete(7);
+
+    expect(calls[0]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks/search',
+        body: JSON.stringify({
+          keyword: 'agent',
+          requestFormat: 'CUSTOM',
+          pageNo: 1,
+          pageSize: 20,
+        }),
+      })
+    );
+    expect(calls[1]).toEqual(
+      expect.objectContaining({
+        method: 'GET',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks/7',
+        body: '',
+      })
+    );
+    expect(calls.slice(2, 5)).toEqual([
+      expect.objectContaining({
+        method: 'POST',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks',
+        body: JSON.stringify(webhook),
+      }),
+      expect.objectContaining({
+        method: 'PUT',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks/7',
+        body: JSON.stringify(webhook),
+      }),
+      expect.objectContaining({
+        method: 'POST',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks/test',
+        body: JSON.stringify(webhook),
+      }),
+    ]);
+    expect(calls[5]).toEqual(
+      expect.objectContaining({
+        method: 'DELETE',
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks/7',
+        body: '',
+      })
+    );
+    vi.restoreAllMocks();
+  });
+});

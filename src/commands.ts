@@ -1,7 +1,16 @@
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { type Command, InvalidArgumentError } from 'commander';
 import { parsePositiveInteger } from './aggregate.js';
-import { normalizeAlertScope, OctoClient } from './client.js';
+import {
+  type EventSubscriptionCreateParams,
+  type EventSubscriptionStatus,
+  type EventSubscriptionUpdateParams,
+  type EventWebhookParams,
+  type EventWebhookRequestFormat,
+  normalizeAlertScope,
+  OctoClient,
+} from './client.js';
 import {
   getBaseUrl,
   getConfigPath,
@@ -153,6 +162,54 @@ function parseNumericFlag(value: string, flagName: string): number {
     throw new Error(`${flagName} must be a valid number`);
   }
   return parsed;
+}
+
+function parsePageSize(value: string): number {
+  const pageSize = parsePositiveInteger(value, '--page-size');
+  if (pageSize > 100) {
+    throw new Error('--page-size must not exceed 100');
+  }
+  return pageSize;
+}
+
+function parseEventEnvironment(
+  value: string | undefined
+): 'test' | 'online' | undefined {
+  if (value === undefined || value === 'test' || value === 'online') {
+    return value;
+  }
+  throw new Error('--env must be one of: test, online');
+}
+
+function parseEventSubscriptionStatus(
+  value: string | undefined
+): EventSubscriptionStatus | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.toUpperCase();
+  if (normalized === 'ENABLED' || normalized === 'DISABLED') {
+    return normalized;
+  }
+  throw new Error('--status must be one of: ENABLED, DISABLED');
+}
+
+function parseEventWebhookRequestFormat(
+  value: string | undefined
+): EventWebhookRequestFormat | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.toUpperCase();
+  if (normalized === 'DEFAULT' || normalized === 'CUSTOM') {
+    return normalized;
+  }
+  throw new Error('--request-format must be one of: DEFAULT, CUSTOM');
+}
+
+function readJsonObject<T>(path: string): T {
+  const source = path === '-' ? 0 : path;
+  const parsed: unknown = JSON.parse(readFileSync(source, 'utf-8'));
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('--file must contain a JSON object');
+  }
+  return parsed as T;
 }
 
 function parseIssueSource(value: string): 'log' | 'rum' {
@@ -1448,6 +1505,205 @@ export function registerCommands(program: Command): void {
         groupFieldList: groupFields.length ? groupFields : undefined,
       });
       printOutput(data, opts.output as OutputFormat);
+    });
+
+  // ─── event subscriptions ────────────────────────────────
+  const eventSubscriptions = program
+    .command('event-subscriptions')
+    .description('Event subscription operations');
+
+  eventSubscriptions
+    .command('list')
+    .description('List event subscriptions')
+    .option('-k, --keyword <keyword>', 'Search by subscription name')
+    .option('-e, --env <env>', 'Environment: test or online')
+    .option('-s, --status <status>', 'Status: ENABLED or DISABLED')
+    .option('--page <n>', 'Page number', '1')
+    .option('--page-size <n>', 'Page size (maximum 100)', '20')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.eventSubscriptionsList({
+        keyword: opts.keyword,
+        environment: parseEventEnvironment(opts.env),
+        status: parseEventSubscriptionStatus(opts.status),
+        pageNo: parsePositiveInteger(opts.page, '--page'),
+        pageSize: parsePageSize(opts.pageSize),
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventSubscriptions
+    .command('detail')
+    .description('Get an event subscription')
+    .argument('<id>', 'Event subscription ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const data = await client.eventSubscriptionDetail(
+        parsePositiveInteger(id, 'id')
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventSubscriptions
+    .command('create')
+    .description('Create a disabled event subscription from a JSON object')
+    .requiredOption('--file <path>', 'JSON file path, or - for stdin')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const params = readJsonObject<EventSubscriptionCreateParams>(opts.file);
+      const data = await client.eventSubscriptionCreate(params);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventSubscriptions
+    .command('update')
+    .description('Update an event subscription from a JSON object')
+    .argument('<id>', 'Event subscription ID')
+    .requiredOption('--file <path>', 'JSON file path, or - for stdin')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const params = readJsonObject<EventSubscriptionUpdateParams>(opts.file);
+      const data = await client.eventSubscriptionUpdate(
+        parsePositiveInteger(id, 'id'),
+        params
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventSubscriptions
+    .command('enable')
+    .description('Enable an event subscription')
+    .argument('<id>', 'Event subscription ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const data = await client.eventSubscriptionUpdateStatus(
+        parsePositiveInteger(id, 'id'),
+        'ENABLED'
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventSubscriptions
+    .command('disable')
+    .description('Disable an event subscription')
+    .argument('<id>', 'Event subscription ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const data = await client.eventSubscriptionUpdateStatus(
+        parsePositiveInteger(id, 'id'),
+        'DISABLED'
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventSubscriptions
+    .command('delete')
+    .description('Delete an event subscription')
+    .argument('<id>', 'Event subscription ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const parsedId = parsePositiveInteger(id, 'id');
+      const client = getClient();
+      await client.eventSubscriptionDelete(parsedId);
+      printOutput({ id: parsedId, deleted: true }, opts.output as OutputFormat);
+    });
+
+  // ─── event webhooks ─────────────────────────────────────
+  const eventWebhooks = program
+    .command('event-webhooks')
+    .description('Event webhook operations');
+
+  eventWebhooks
+    .command('list')
+    .description('List event webhooks')
+    .option('-k, --keyword <keyword>', 'Search by webhook name')
+    .option(
+      '-r, --request-format <format>',
+      'Request format: DEFAULT or CUSTOM'
+    )
+    .option('--page <n>', 'Page number', '1')
+    .option('--page-size <n>', 'Page size (maximum 100)', '20')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const data = await client.eventWebhooksList({
+        keyword: opts.keyword,
+        requestFormat: parseEventWebhookRequestFormat(opts.requestFormat),
+        pageNo: parsePositiveInteger(opts.page, '--page'),
+        pageSize: parsePageSize(opts.pageSize),
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventWebhooks
+    .command('detail')
+    .description('Get an event webhook')
+    .argument('<id>', 'Event webhook ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const data = await client.eventWebhookDetail(
+        parsePositiveInteger(id, 'id')
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventWebhooks
+    .command('create')
+    .description('Create an event webhook from a JSON object')
+    .requiredOption('--file <path>', 'JSON file path, or - for stdin')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const params = readJsonObject<EventWebhookParams>(opts.file);
+      const data = await client.eventWebhookCreate(params);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventWebhooks
+    .command('update')
+    .description('Update an event webhook from a JSON object')
+    .argument('<id>', 'Event webhook ID')
+    .requiredOption('--file <path>', 'JSON file path, or - for stdin')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const client = getClient();
+      const params = readJsonObject<EventWebhookParams>(opts.file);
+      const data = await client.eventWebhookUpdate(
+        parsePositiveInteger(id, 'id'),
+        params
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventWebhooks
+    .command('test')
+    .description('Send a test request using an event webhook JSON object')
+    .requiredOption('--file <path>', 'JSON file path, or - for stdin')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const client = getClient();
+      const params = readJsonObject<EventWebhookParams>(opts.file);
+      const data = await client.eventWebhookTest(params);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  eventWebhooks
+    .command('delete')
+    .description('Delete an event webhook')
+    .argument('<id>', 'Event webhook ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const parsedId = parsePositiveInteger(id, 'id');
+      const client = getClient();
+      await client.eventWebhookDelete(parsedId);
+      printOutput({ id: parsedId, deleted: true }, opts.output as OutputFormat);
     });
 
   // ─── users ───────────────────────────────────────────────

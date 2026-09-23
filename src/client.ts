@@ -98,6 +98,106 @@ function normalizeIssueId(issueId: string, fieldName: string): string {
   return normalized;
 }
 
+export type EventSubscriptionStatus = 'DISABLED' | 'ENABLED';
+
+export type EventWebhookRequestFormat = 'DEFAULT' | 'CUSTOM';
+
+export interface PageData<T> {
+  count: number;
+  list: T[];
+  lastPage: boolean;
+}
+
+export interface EventSubscriptionSearchParams {
+  keyword?: string;
+  environment?: 'test' | 'online';
+  status?: EventSubscriptionStatus;
+  pageNo?: number;
+  pageSize?: number;
+}
+
+export interface EventSubscriptionCreateParams {
+  name: string;
+  description?: string | null;
+  environment: 'test' | 'online';
+  filter: string;
+  webhookId: number;
+}
+
+export interface EventSubscriptionUpdateParams {
+  name: string;
+  description?: string | null;
+  filter: string;
+  webhookId: number;
+}
+
+export interface EventSubscriptionListItem {
+  id: number;
+  name: string;
+  description: string | null;
+  environment: 'test' | 'online';
+  status: EventSubscriptionStatus;
+  filter: string;
+  webhookId: number;
+  webhookName: string;
+  webhookRequestFormat: EventWebhookRequestFormat;
+  updatedAt: number | null;
+}
+
+export interface EventSubscriptionDetail {
+  id: number;
+  name: string;
+  description: string | null;
+  environment: 'test' | 'online';
+  filter: string;
+  webhookId: number;
+  webhookName: string;
+  status: EventSubscriptionStatus;
+  createdAt: number | null;
+  updatedAt: number | null;
+}
+
+export interface EventWebhookSearchParams {
+  keyword?: string;
+  requestFormat?: EventWebhookRequestFormat;
+  pageNo?: number;
+  pageSize?: number;
+}
+
+export interface EventWebhookParams {
+  name: string;
+  url: string;
+  headers?: Record<string, string> | null;
+  requestFormat: EventWebhookRequestFormat;
+  bodyTemplate?: string | null;
+}
+
+export interface EventWebhookListItem {
+  id: number;
+  name: string;
+  url: string;
+  requestFormat: EventWebhookRequestFormat;
+  referenceCount: number;
+  updatedAt: number | null;
+}
+
+export interface EventWebhookDetail {
+  id: number;
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+  requestFormat: EventWebhookRequestFormat;
+  bodyTemplate: string | null;
+  updatedAt: number | null;
+}
+
+export interface EventWebhookTestResult {
+  success: boolean;
+  httpStatus: number | null;
+  durationMs: number;
+  summary: string | null;
+}
+
 /**
  * Accepts the legacy uppercase spelling that older versions of this CLI sent,
  * so `--scope ALL` keeps working instead of failing with "静默范围不能为空".
@@ -729,6 +829,94 @@ export class OctoClient {
     }[];
   }) {
     return this.post('/infra-octopus-openapi/v1/event/aggregate', params);
+  }
+
+  // --- Event subscriptions ---
+
+  async eventSubscriptionsList(params: EventSubscriptionSearchParams) {
+    return this.post<PageData<EventSubscriptionListItem>>(
+      '/infra-octopus-openapi/v1/event/subscriptions/search',
+      params
+    );
+  }
+
+  async eventSubscriptionDetail(id: number) {
+    return this.get<EventSubscriptionDetail>(
+      `/infra-octopus-openapi/v1/event/subscriptions/${id}`
+    );
+  }
+
+  async eventSubscriptionCreate(params: EventSubscriptionCreateParams) {
+    return this.post<EventSubscriptionDetail>(
+      '/infra-octopus-openapi/v1/event/subscriptions',
+      params
+    );
+  }
+
+  async eventSubscriptionUpdate(
+    id: number,
+    params: EventSubscriptionUpdateParams
+  ) {
+    return this.put<EventSubscriptionDetail>(
+      `/infra-octopus-openapi/v1/event/subscriptions/${id}`,
+      params
+    );
+  }
+
+  async eventSubscriptionUpdateStatus(
+    id: number,
+    status: EventSubscriptionStatus
+  ) {
+    return this.put<EventSubscriptionDetail>(
+      `/infra-octopus-openapi/v1/event/subscriptions/${id}/status`,
+      { status }
+    );
+  }
+
+  async eventSubscriptionDelete(id: number) {
+    return this.del<void>(
+      `/infra-octopus-openapi/v1/event/subscriptions/${id}`
+    );
+  }
+
+  // --- Event webhooks ---
+
+  async eventWebhooksList(params: EventWebhookSearchParams) {
+    return this.post<PageData<EventWebhookListItem>>(
+      '/infra-octopus-openapi/v1/event/webhooks/search',
+      params
+    );
+  }
+
+  async eventWebhookDetail(id: number) {
+    return this.get<EventWebhookDetail>(
+      `/infra-octopus-openapi/v1/event/webhooks/${id}`
+    );
+  }
+
+  async eventWebhookCreate(params: EventWebhookParams) {
+    return this.post<EventWebhookDetail>(
+      '/infra-octopus-openapi/v1/event/webhooks',
+      params
+    );
+  }
+
+  async eventWebhookUpdate(id: number, params: EventWebhookParams) {
+    return this.put<EventWebhookDetail>(
+      `/infra-octopus-openapi/v1/event/webhooks/${id}`,
+      params
+    );
+  }
+
+  async eventWebhookTest(params: EventWebhookParams) {
+    return this.post<EventWebhookTestResult>(
+      '/infra-octopus-openapi/v1/event/webhooks/test',
+      params
+    );
+  }
+
+  async eventWebhookDelete(id: number) {
+    return this.del<void>(`/infra-octopus-openapi/v1/event/webhooks/${id}`);
   }
 
   // --- Dashboard ---
