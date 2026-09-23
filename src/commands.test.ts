@@ -1,9 +1,25 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerCommands } from './commands.js';
 
+const temporaryDirectories: string[] = [];
+
+function writeJsonFixture(data: unknown): string {
+  const directory = mkdtempSync(join(tmpdir(), 'octo-cli-'));
+  temporaryDirectories.push(directory);
+  const path = join(directory, 'request.json');
+  writeFileSync(path, JSON.stringify(data));
+  return path;
+}
+
 describe('commands', () => {
   afterEach(() => {
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
@@ -1089,6 +1105,212 @@ describe('commands', () => {
           { from: 'node' }
         )
       ).rejects.toThrow(/Invalid scope/);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe('event subscription and webhook commands', () => {
+    function setupCli(data: unknown = null) {
+      vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+      vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+      const calls: { url: string; method: string; body: string }[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init: RequestInit) => {
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: String(init.body ?? ''),
+          });
+          return new Response(JSON.stringify({ code: 0, data, message: 'ok' }));
+        })
+      );
+      const stdout: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((message?: unknown) => {
+        stdout.push(String(message));
+      });
+      const program = new Command();
+      program.exitOverride();
+      registerCommands(program);
+      return { calls, stdout, program };
+    }
+
+    it('keeps event query commands and registers both management groups', () => {
+      const program = new Command();
+      registerCommands(program);
+
+      const events = program.commands.find(
+        (command) => command.name() === 'events'
+      );
+      const subscriptionCommands = program.commands
+        .find((command) => command.name() === 'event-subscriptions')
+        ?.commands.map((command) => command.name());
+      const webhookCommands = program.commands
+        .find((command) => command.name() === 'event-webhooks')
+        ?.commands.map((command) => command.name());
+
+      expect(events?.commands.map((command) => command.name())).toEqual([
+        'list',
+        'aggregate',
+      ]);
+      expect(subscriptionCommands).toEqual([
+        'list',
+        'detail',
+        'create',
+        'update',
+        'enable',
+        'disable',
+        'delete',
+      ]);
+      expect(webhookCommands).toEqual([
+        'list',
+        'detail',
+        'create',
+        'update',
+        'test',
+        'delete',
+      ]);
+    });
+
+    it('event-subscriptions list maps CLI flags to the search contract', async () => {
+      const response = { count: 0, list: [], lastPage: true };
+      const { calls, stdout, program } = setupCli(response);
+
+      await program.parseAsync(
+        [
+          'node',
+          'octo',
+          'event-subscriptions',
+          'list',
+          '--keyword',
+          'payment',
+          '--env',
+          'online',
+          '--status',
+          'enabled',
+          '--page',
+          '2',
+          '--page-size',
+          '50',
+        ],
+        { from: 'node' }
+      );
+
+      expect(calls[0]).toEqual({
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/search',
+        method: 'POST',
+        body: JSON.stringify({
+          keyword: 'payment',
+          environment: 'online',
+          status: 'ENABLED',
+          pageNo: 2,
+          pageSize: 50,
+        }),
+      });
+      expect(JSON.parse(stdout[0])).toEqual(response);
+    });
+
+    it('event-subscriptions create reads the request from a JSON file', async () => {
+      const request = {
+        name: 'payment failures',
+        description: 'notify payment agent',
+        environment: 'test',
+        filter: 'type = payment.failed',
+        webhookId: 8,
+      };
+      const response = { id: 11, status: 'DISABLED', ...request };
+      const file = writeJsonFixture(request);
+      const { calls, stdout, program } = setupCli(response);
+
+      await program.parseAsync(
+        ['node', 'octo', 'event-subscriptions', 'create', '--file', file],
+        { from: 'node' }
+      );
+
+      expect(calls[0]).toEqual({
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions',
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      expect(JSON.parse(stdout[0])).toEqual(response);
+    });
+
+    it('event-subscriptions enable and delete use the expected methods', async () => {
+      const { calls, stdout, program } = setupCli({
+        id: 11,
+        status: 'ENABLED',
+      });
+
+      await program.parseAsync(
+        ['node', 'octo', 'event-subscriptions', 'enable', '11'],
+        { from: 'node' }
+      );
+      await program.parseAsync(
+        ['node', 'octo', 'event-subscriptions', 'delete', '11'],
+        { from: 'node' }
+      );
+
+      expect(calls[0]).toEqual({
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/11/status',
+        method: 'PUT',
+        body: JSON.stringify({ status: 'ENABLED' }),
+      });
+      expect(calls[1]).toEqual({
+        url: 'https://example.com/infra-octopus-openapi/v1/event/subscriptions/11',
+        method: 'DELETE',
+        body: '',
+      });
+      expect(JSON.parse(stdout[1])).toEqual({ id: 11, deleted: true });
+    });
+
+    it('event-webhooks test preserves header maps and custom templates', async () => {
+      const request = {
+        name: 'agent webhook',
+        url: 'https://agent.example.com/events',
+        headers: { Authorization: 'Bearer test' },
+        requestFormat: 'CUSTOM',
+        bodyTemplate: '{"eventId":"{{event.event_id}}"}',
+      };
+      const response = {
+        success: true,
+        httpStatus: 200,
+        durationMs: 12,
+        summary: 'OK',
+      };
+      const file = writeJsonFixture(request);
+      const { calls, stdout, program } = setupCli(response);
+
+      await program.parseAsync(
+        ['node', 'octo', 'event-webhooks', 'test', '--file', file],
+        { from: 'node' }
+      );
+
+      expect(calls[0]).toEqual({
+        url: 'https://example.com/infra-octopus-openapi/v1/event/webhooks/test',
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      expect(JSON.parse(stdout[0])).toEqual(response);
+    });
+
+    it('rejects invalid list limits and non-object request files locally', async () => {
+      const { calls, program } = setupCli();
+
+      await expect(
+        program.parseAsync(
+          ['node', 'octo', 'event-webhooks', 'list', '--page-size', '101'],
+          { from: 'node' }
+        )
+      ).rejects.toThrow('--page-size must not exceed 100');
+
+      const file = writeJsonFixture([]);
+      await expect(
+        program.parseAsync(
+          ['node', 'octo', 'event-webhooks', 'create', '--file', file],
+          { from: 'node' }
+        )
+      ).rejects.toThrow('--file must contain a JSON object');
+
       expect(calls).toHaveLength(0);
     });
   });
