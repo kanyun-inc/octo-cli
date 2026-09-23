@@ -1,5 +1,11 @@
 # octo-cli
 
+## 1.6.0
+
+### Minor Changes
+
+- 59fae13: 新增事件订阅和事件 Webhook 管理命令，支持查询、创建、更新、启停、测试和删除。
+
 ## 1.5.1
 
 ### Patch Changes
