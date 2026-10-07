@@ -1,5 +1,7 @@
 import { Command } from 'commander';
 import { registerCommands } from './commands.js';
+import { runCli } from './errors.js';
+import { configureCommandHelp } from './help.js';
 
 declare const __PKG_VERSION__: string;
 
@@ -10,7 +12,11 @@ program
   .description(
     'Octopus Observability CLI — logs, alerts, traces, metrics and more'
   )
-  .version(__PKG_VERSION__);
+  .version(__PKG_VERSION__)
+  .option(
+    '--json-errors',
+    'Print failures as {error:{message,status?,code?,hints?}} JSON on stderr'
+  );
 
 registerCommands(program);
 
@@ -38,29 +44,35 @@ program
   .description('Register octo-mcp in Claude Code with one command')
   .option('-s, --scope <scope>', 'user, local, or project', 'user')
   .action(async (opts) => {
-    const { execSync } = await import('node:child_process');
-    const { getToken } = await import('./config.js');
-    const token = getToken();
-
-    if (!token) {
-      console.error(
-        'Not logged in. Run `npx octo-cli login --token <TOKEN>` first.'
-      );
-      process.exit(1);
-    }
-    const envFlags = `-e OCTOPUS_TOKEN=${token}`;
+    const { execFileSync } = await import('node:child_process');
+    const { getCredentials } = await import('./config.js');
+    const { token } = getCredentials();
     try {
-      execSync(
-        `claude mcp add octo-mcp -s ${opts.scope} ${envFlags} -- npx -y octo-cli mcp`,
+      execFileSync(
+        'claude',
+        [
+          'mcp',
+          'add',
+          'octo-mcp',
+          '-s',
+          opts.scope,
+          '-e',
+          `OCTOPUS_TOKEN=${token}`,
+          '--',
+          'npx',
+          '-y',
+          'octo-cli',
+          'mcp',
+        ],
         { stdio: 'inherit' }
       );
       console.log('octo-mcp registered in Claude Code.');
     } catch {
-      console.error(
+      throw new Error(
         'Failed. Make sure `claude` CLI is installed (npm i -g @anthropic-ai/claude-code).'
       );
-      process.exit(1);
     }
   });
 
-program.parse();
+configureCommandHelp(program);
+await runCli(program);

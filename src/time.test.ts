@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDuration, resolveTimeRange } from './time.js';
+import { parseDuration, parseTimestamp, resolveTimeRange } from './time.js';
 
 describe('parseDuration', () => {
   it('parses seconds', () => {
@@ -29,6 +29,17 @@ describe('parseDuration', () => {
 });
 
 describe('resolveTimeRange', () => {
+  it('rejects an orphan end time and reversed or empty ranges', () => {
+    expect(() => resolveTimeRange({ to: '1700000000000' })).toThrow(
+      '--to requires --from'
+    );
+    expect(() =>
+      resolveTimeRange({ from: '1700000000000', to: '1700000000000' })
+    ).toThrow('earlier');
+    expect(() =>
+      resolveTimeRange({ from: '1700000000001', to: '1700000000000' })
+    ).toThrow('earlier');
+  });
   it('uses --last to compute range', () => {
     const before = Date.now();
     const { from, to } = resolveTimeRange({ last: '1h' });
@@ -67,5 +78,19 @@ describe('resolveTimeRange', () => {
     });
     expect(from).toBe(new Date('2024-06-01T00:00:00Z').getTime());
     expect(to).toBe(new Date('2024-06-01T23:59:59Z').getTime());
+  });
+});
+
+describe('point-in-time parsing', () => {
+  it.each(['1790596560000', '1790596560', '2026-09-28T19:56:00+08:00'])(
+    'parses %s consistently',
+    (input) => {
+      expect(parseTimestamp(input)).toBe(1790596560000);
+    }
+  );
+  it('rejects invalid timestamps and nonpositive durations', () => {
+    expect(() => parseTimestamp('invalid')).toThrow('Invalid time');
+    expect(() => parseDuration('0s')).toThrow('positive');
+    expect(() => parseDuration('999999999999999999w')).toThrow('finite');
   });
 });

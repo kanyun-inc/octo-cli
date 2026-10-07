@@ -59,17 +59,8 @@ describe('PAT credentials', () => {
     });
     vi.stubEnv('OCTOPUS_APP_ID', 'legacy-env-app-id');
     vi.stubEnv('OCTOPUS_APP_SECRET', 'legacy-env-app-secret');
-    const exit = vi.spyOn(process, 'exit').mockImplementation((code) => {
-      throw new Error(`process.exit(${code})`);
-    });
-    const error = vi
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined);
-
-    expect(() => getCredentials()).toThrow('process.exit(1)');
-    expect(exit).toHaveBeenCalledWith(1);
-    expect(error).toHaveBeenCalledWith(
-      'Error: Not configured. Run `octo login --token <TOKEN>` or set OCTOPUS_TOKEN.'
+    expect(() => getCredentials()).toThrow(
+      'Not configured. Run `octo login --token <TOKEN>` or set OCTOPUS_TOKEN.'
     );
   });
 

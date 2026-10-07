@@ -322,12 +322,15 @@ npx octo-cli trace aggregate -a "*:count" -g "name" -l 30m
 
 ```bash
 # Timeseries query
-npx octo-cli metrics query "sum(http_requests{service=myapp}.as_count)" -l 1h
+npx octo-cli metrics query "as_count(sum(http_requests{service=myapp}) by (service))" -l 1h
 npx octo-cli metrics query "avg(cpu_usage{service=myapp})" --points 50 -l 2h
 
 # Single point value
-npx octo-cli metrics point "sum(error_count{service=myapp}.as_count)"
+npx octo-cli metrics point "as_count(sum(error_count{service=myapp}) by (service))"
 ```
+
+`by (...)` belongs to the space aggregate (`sum`, `count_values`, `pxx`, etc.).
+Keep it inside `as_count`/`as_rate`; use `octo metrics query --help` for full QL guidance.
 
 ### Services / APM
 
@@ -350,7 +353,7 @@ npx octo-cli llm -q "application.name = myapp" -l 1h -n 50    # by app
 ```bash
 npx octo-cli rum list -e test -q "application.name = rush-app AND type = session" -l 1d
 npx octo-cli rum list -q "type = error" -l 1h
-npx octo-cli rum detail <id>
+npx octo-cli rum detail <ID_FROM_LIST> -e test --timestamp <TIMESTAMP_FROM_LIST>
 npx octo-cli rum aggregate -q "type = view" -a "*:count" -g "view.name:10" -l 1h
 ```
 
@@ -358,7 +361,7 @@ npx octo-cli rum aggregate -q "type = view" -a "*:count" -g "view.name:10" -l 1h
 
 ```bash
 npx octo-cli events -l 1d                              # recent events
-npx octo-cli events -q "type = deployment" -l 7d       # deployments
+npx octo-cli events -q "type = deployment*" -l 7d      # deployment event family, including scale
 npx octo-cli events aggregate -a "*:count" -g "type:10" -l 1d
 ```
 

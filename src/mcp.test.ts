@@ -83,7 +83,7 @@ describe('MCP tools', () => {
   });
 
   it('dispatches issue detail, assign, and update tools', async () => {
-    vi.stubEnv('OCTOPUS_ENV', 'default-env');
+    vi.stubEnv('OCTOPUS_ENV', 'test');
     const client = testClient();
     const calls = captureFetch();
 
@@ -118,7 +118,7 @@ describe('MCP tools', () => {
     );
     expect(JSON.parse(calls[2].body)).toEqual({
       dataSource: 'log',
-      env: 'default-env',
+      env: 'test',
       issueIds: ['ISSUE-1'],
       status: 'resolved',
     });
@@ -223,7 +223,7 @@ describe('MCP tools', () => {
   });
 
   it('dispatches issue update with USER_COUNT ignoreRule', async () => {
-    vi.stubEnv('OCTOPUS_ENV', 'default-env');
+    vi.stubEnv('OCTOPUS_ENV', 'test');
     const client = testClient();
     const calls = captureFetch();
 
@@ -248,7 +248,7 @@ describe('MCP tools', () => {
 
     expect(JSON.parse(calls[0].body)).toEqual({
       dataSource: 'log',
-      env: 'default-env',
+      env: 'test',
       issueIds: ['ISSUE-1'],
       status: 'ignored',
       ignoreRule: {
@@ -418,6 +418,51 @@ describe('MCP tools', () => {
     });
   });
 
+  it.each(['octo_metrics_query', 'octo_metrics_point'])(
+    '%s advertised grouped Count QL dispatches unchanged and preserves grouped results',
+    async (name) => {
+      const tool = getMcpTools().find((tool) => tool.name === name);
+      expect(tool).toBeDefined();
+      expect(tool?.description).not.toMatch(/\.as_(count|rate)/i);
+      const description = (
+        tool?.inputSchema.properties.queries as { description: string }
+      ).description;
+      const query = description.match(/\["([^"]+)"\]/)?.[1];
+      expect(query).toBe(
+        'as_count(sum(http_requests{service=myapp}) by (service))'
+      );
+      const grouped = [
+        {
+          id: 'A',
+          labelList: [[{ key: 'service', value: 'myapp' }]],
+          values: name === 'octo_metrics_query' ? [[12]] : [12],
+          ...(name === 'octo_metrics_query'
+            ? { times: [1789833600000] }
+            : { time: 1789833600000 }),
+        },
+      ];
+      const calls = captureFetch(grouped);
+      const result = await handleMcpTool(
+        name,
+        {
+          queries: [query],
+          env: 'online',
+          from: 1789747200000,
+          to: 1789833600000,
+          at: 1789833600000,
+        },
+        testClient()
+      );
+      expect(result).toEqual({
+        content: [{ type: 'text', text: JSON.stringify(grouped, null, 2) }],
+      });
+      expect(calls).toHaveLength(1);
+      expect(JSON.parse(calls[0].body).queries).toEqual([
+        { id: 'A', query, dataSource: 'metric' },
+      ]);
+    }
+  );
+
   it('dispatches trace aggregate and metrics point tools', async () => {
     const client = testClient();
     const calls = captureFetch();
@@ -484,7 +529,11 @@ describe('MCP tools', () => {
       { env: 'test', from: 1000, to: 2000, service: 'checkout' },
       client
     );
-    await handleMcpTool('octo_rum_detail', { id: 'rum-event-1' }, client);
+    await handleMcpTool(
+      'octo_rum_detail',
+      { id: 'rum-event-1', timestamp: 1790596560000 },
+      client
+    );
     await handleMcpTool(
       'octo_users_search',
       { names: ['alice', 'bob'] },
@@ -503,7 +552,7 @@ describe('MCP tools', () => {
     });
     expect(calls[1].method).toBe('GET');
     expect(calls[1].url).toBe(
-      'https://example.com/infra-octopus-openapi/v1/rum/rum-event-1'
+      'https://example.com/infra-octopus-openapi/v1/rum/rum-event-1?env=online&timestamp=1790596560000'
     );
     expect(calls[2].method).toBe('POST');
     expect(calls[2].url).toBe(
@@ -632,7 +681,7 @@ describe('MCP tools', () => {
   it('defaults service entries to the CLI 1h time window', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-03T12:00:00.000Z'));
-    vi.stubEnv('OCTOPUS_ENV', 'default-env');
+    vi.stubEnv('OCTOPUS_ENV', 'test');
     const client = testClient();
     const calls = captureFetch();
 
@@ -647,7 +696,7 @@ describe('MCP tools', () => {
       'https://example.com/infra-octopus-openapi/v1/apm/query/entries'
     );
     expect(JSON.parse(calls[0].body)).toEqual({
-      env: 'default-env',
+      env: 'test',
       from: 1_783_076_400_000,
       to: 1_783_080_000_000,
       service: 'checkout',

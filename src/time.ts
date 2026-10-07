@@ -16,7 +16,11 @@ export function parseDuration(input: string): number {
     w: 604_800_000,
   };
 
-  return Math.floor(value * multipliers[unit]);
+  const ms = Math.floor(value * multipliers[unit]);
+  if (!Number.isSafeInteger(ms) || ms <= 0) {
+    throw new Error(`Duration must be positive and finite: "${input}"`);
+  }
+  return ms;
 }
 
 /**
@@ -29,9 +33,14 @@ export function resolveTimeRange(opts: {
 }): { from: number; to: number } {
   const now = Date.now();
 
+  if (opts.to && !opts.from) {
+    throw new Error('--to requires --from; use --last for a relative range');
+  }
+
   if (opts.from) {
     const from = parseTimestamp(opts.from);
     const to = opts.to ? parseTimestamp(opts.to) : now;
+    if (from >= to) throw new Error('--from must be earlier than --to');
     return { from, to };
   }
 
@@ -44,7 +53,7 @@ export function resolveTimeRange(opts: {
   return { from: now - 15 * 60_000, to: now };
 }
 
-function parseTimestamp(input: string): number {
+export function parseTimestamp(input: string): number {
   // Pure numeric → treat as epoch ms
   if (/^\d{13}$/.test(input)) return Number.parseInt(input, 10);
   // Epoch seconds

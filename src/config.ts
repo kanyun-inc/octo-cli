@@ -37,7 +37,16 @@ export function getToken(): string | undefined {
 }
 
 export function getDefaultEnv(): string {
-  return process.env.OCTOPUS_ENV ?? readConfig().env ?? 'online';
+  return validateEnvironment(
+    process.env.OCTOPUS_ENV ?? readConfig().env ?? 'online'
+  );
+}
+
+export function validateEnvironment(value: string): 'online' | 'test' {
+  if (value === 'online' || value === 'test') return value;
+  throw new Error(
+    `--env / OCTOPUS_ENV must be one of: online, test; received "${value}"`
+  );
 }
 
 export function getExtraHeaders(): Record<string, string> {
@@ -61,6 +70,7 @@ export function getExtraHeaders(): Record<string, string> {
 }
 
 export function saveToken(token: string, baseUrl?: string, env?: string): void {
+  if (env !== undefined) validateEnvironment(env);
   const previous = readConfig();
   writeConfig({
     token,
@@ -78,8 +88,7 @@ export function getCredentials(): { token: string } {
   if (token) {
     return { token };
   }
-  console.error(
-    'Error: Not configured. Run `octo login --token <TOKEN>` or set OCTOPUS_TOKEN.'
+  throw new Error(
+    'Not configured. Run `octo login --token <TOKEN>` or set OCTOPUS_TOKEN.'
   );
-  process.exit(1);
 }

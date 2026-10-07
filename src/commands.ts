@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { type Command, InvalidArgumentError } from 'commander';
-import { parsePositiveInteger } from './aggregate.js';
+import { parsePositiveInteger, warnMissingGroups } from './aggregate.js';
 import {
   type EventSubscriptionCreateParams,
   type EventSubscriptionStatus,
@@ -18,8 +18,11 @@ import {
   getDefaultEnv,
   saveToken,
 } from './config.js';
+import { printPageOutput } from './cursor.js';
+import { configureCommandHelp } from './help.js';
+import { configureValidation } from './options.js';
 import { printOutput } from './output.js';
-import { resolveTimeRange } from './time.js';
+import { parseTimestamp, resolveTimeRange } from './time.js';
 
 type IssueIgnoreRulePayload =
   | { type: 'time'; timeRule: { endTime: number } }
@@ -123,6 +126,9 @@ function collectAggregateGroup(
 }
 
 function buildAggregateFields(opts: AggregateOptions) {
+  if (opts.group.reduce((product, group) => product * group.limit, 1) > 1000) {
+    throw new Error('--group limits must have a product no greater than 1000');
+  }
   const aggregationFields = opts.agg.length
     ? opts.agg
     : [{ field: '*', operation: 'count' }];
@@ -358,7 +364,32 @@ function getClient(): OctoClient {
 
 type OutputFormat = 'json' | 'table' | 'jsonl';
 
+function scrollParams(opts: {
+  scrollId?: string;
+  scrollType?: string;
+  serializedSortValues?: string;
+  sort?: string;
+  sortOrder?: string;
+  sortOperation?: string;
+}) {
+  return {
+    scrollId: opts.scrollId,
+    scrollType: opts.scrollType,
+    serializedSortValues: opts.serializedSortValues,
+    sort: opts.sort
+      ? {
+          field: opts.sort,
+          order: opts.sortOrder ?? 'desc',
+          operation: opts.sortOperation
+            ? { operationEnum: opts.sortOperation }
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
 export function registerCommands(program: Command): void {
+  configureValidation(program);
   // ─── login ───────────────────────────────────────────────
   program
     .command('login')
@@ -404,13 +435,21 @@ export function registerCommands(program: Command): void {
     .description('Search logs')
     .option('-q, --query <query>', 'Query string')
     .option('-e, --env <env>', 'Environment')
-    .option('-l, --last <duration>', 'Time range, e.g. 15m, 1h, 2d')
+    .option('-l, --last <duration>', 'Time range, e.g. 15m, 1h, 2d', '15m')
     .option('--from <time>', 'Start time (epoch ms or ISO)')
     .option('--to <time>', 'End time (epoch ms or ISO)')
     .option('-n, --limit <n>', 'Max results', '50')
     .option('--order <order>', 'asc or desc', 'desc')
     .option('-o, --output <fmt>', 'Output: json, table, jsonl', 'json')
     .option('--scroll-id <id>', 'Pagination scroll ID')
+    .option(
+      '--cursor-file <path>',
+      'Atomically write page continuation metadata'
+    )
+    .option(
+      '--serialized-sort-values <value>',
+      'Opaque sort value from the last log; pass separately from its id'
+    )
     .action(async (opts) => {
       const client = getClient();
       const { from, to } = resolveTimeRange(opts);
@@ -422,8 +461,9 @@ export function registerCommands(program: Command): void {
         limit: Number.parseInt(opts.limit, 10),
         order: opts.order,
         scrollId: opts.scrollId,
+        serializedSortValues: opts.serializedSortValues,
       });
-      printOutput(data, opts.output as OutputFormat);
+      await printPageOutput(data, opts, 'logs');
     });
 
   logs
@@ -431,7 +471,7 @@ export function registerCommands(program: Command): void {
     .description('Aggregate logs')
     .option('-q, --query <query>', 'Query string')
     .option('-e, --env <env>', 'Environment')
-    .option('-l, --last <duration>', 'Time range')
+    .option('-l, --last <duration>', 'Time range', '15m')
     .option('--from <time>', 'Start time')
     .option('--to <time>', 'End time')
     .option(
@@ -460,6 +500,7 @@ export function registerCommands(program: Command): void {
         aggregationFields,
         groupFields: groupFields.length ? groupFields : undefined,
       });
+      warnMissingGroups(data, groupFields);
       printOutput(data, opts.output as OutputFormat);
     });
 
@@ -476,7 +517,7 @@ export function registerCommands(program: Command): void {
     .option('--to <time>', 'End time')
     .option(
       '-s, --status <status>',
-      'firing or resolved (omit for all statuses)'
+      'firing, resolved, or all (all = omit the status filter)'
     )
     .option('-p, --priority <p>', 'Priority filter (comma-separated: P0,P1,P2)')
     .option('--service <svc>', 'Service filter (comma-separated)')
@@ -747,6 +788,15 @@ export function registerCommands(program: Command): void {
   issues
     .command('search')
     .description('Search issues')
+    .option(
+      '--source <src>',
+      'Issue data source: log or rum (backend default: log)',
+      parseIssueSource
+    )
+    .option(
+      '--service <service>',
+      'Legacy service filter; prefer service = ... in --query'
+    )
     .option('-q, --query <query>', 'Query string')
     .option('-e, --env <env>', 'Environment')
     .option('-l, --last <duration>', 'Time range', '1h')
@@ -769,6 +819,8 @@ export function registerCommands(program: Command): void {
         query: opts.query,
         sortType: opts.sort,
         status: opts.status,
+        dataSource: opts.source,
+        service: opts.service,
       });
       printOutput(data, opts.output as OutputFormat);
     });
@@ -777,10 +829,15 @@ export function registerCommands(program: Command): void {
     .command('detail')
     .description('Get issue detail')
     .argument('<issueId>', 'Issue ID')
+    .option(
+      '--source <src>',
+      'Issue data source: log or rum (backend default: log)',
+      parseIssueSource
+    )
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (issueId, opts) => {
       const client = getClient();
-      const data = await client.issueDetail(issueId);
+      const data = await client.issueDetail(issueId, opts.source);
       printOutput(data, opts.output as OutputFormat);
     });
 
@@ -807,7 +864,12 @@ export function registerCommands(program: Command): void {
     .description('Batch assign issues to a user')
     .requiredOption('--user <userId>', 'Assignee user ID')
     .requiredOption('--ids <ids>', 'Comma-separated issue IDs')
-    .option('--source <src>', 'Data source: log or rum', 'log')
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
     .action(async (opts) => {
       const client = getClient();
       await client.issuesBatchAssign({
@@ -1165,6 +1227,18 @@ export function registerCommands(program: Command): void {
   trace
     .command('search')
     .description('Search trace spans')
+    .option(
+      '--scroll-id <id>',
+      'Last span id from the previous page (not traceId or spanId)'
+    )
+    .option(
+      '--cursor-file <path>',
+      'Atomically write page continuation metadata'
+    )
+    .option(
+      '--serialized-sort-values <value>',
+      'Opaque sort value from the last span; pass separately from its id'
+    )
     .option('-q, --query <query>', 'Query string')
     .option('-e, --env <env>', 'Environment')
     .option('-l, --last <duration>', 'Time range', '15m')
@@ -1183,8 +1257,10 @@ export function registerCommands(program: Command): void {
         query: opts.query,
         limit: Number.parseInt(opts.limit, 10),
         order: opts.order,
+        scrollId: opts.scrollId,
+        serializedSortValues: opts.serializedSortValues,
       });
-      printOutput(data, opts.output as OutputFormat);
+      await printPageOutput(data, opts, 'spanItems');
     });
 
   trace
@@ -1221,6 +1297,7 @@ export function registerCommands(program: Command): void {
         aggregationFields,
         groupFields: groupFields.length ? groupFields : undefined,
       });
+      warnMissingGroups(data, groupFields);
       printOutput(data, opts.output as OutputFormat);
     });
 
@@ -1230,7 +1307,7 @@ export function registerCommands(program: Command): void {
   metrics
     .command('query')
     .description('Query metrics timeseries')
-    .argument('<queries...>', 'Metric queries (e.g. "sum(test{}.as_count)")')
+    .argument('<queries...>', 'Metric queries (e.g. "as_count(sum(test{}))")')
     .option('-e, --env <env>', 'Environment')
     .option('-l, --last <duration>', 'Time range', '1h')
     .option('--from <time>', 'Start time')
@@ -1266,7 +1343,7 @@ export function registerCommands(program: Command): void {
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (queryArgs: string[], opts) => {
       const client = getClient();
-      const to = opts.at ? new Date(opts.at).getTime() : Date.now();
+      const to = opts.at ? parseTimestamp(opts.at) : Date.now();
 
       const queries = queryArgs.map((q, i) => ({
         id: String.fromCharCode(65 + i),
@@ -1290,6 +1367,7 @@ export function registerCommands(program: Command): void {
   services
     .command('list')
     .description('List services')
+    .option('--service <service>', 'Filter services by name')
     .option('-e, --env <env>', 'Environment')
     .option('-l, --last <duration>', 'Time range', '1h')
     .option('--from <time>', 'Start time')
@@ -1302,6 +1380,7 @@ export function registerCommands(program: Command): void {
         env: opts.env ?? getDefaultEnv(),
         from,
         to,
+        service: opts.service,
       });
       printOutput(data, opts.output as OutputFormat);
     });
@@ -1330,6 +1409,11 @@ export function registerCommands(program: Command): void {
   services
     .command('topo')
     .description('Service topology graph')
+    .option('--entry-span-name <name>', 'Filter topology by entry span name')
+    .option(
+      '--entry-span-operation <operation>',
+      'Filter topology by entry span operation'
+    )
     .argument('<service>', 'Service name')
     .option('-e, --env <env>', 'Environment')
     .option('-l, --last <duration>', 'Time range', '1h')
@@ -1344,6 +1428,8 @@ export function registerCommands(program: Command): void {
         from,
         to,
         service,
+        entrySpanName: opts.entrySpanName,
+        entrySpanOperation: opts.entrySpanOperation,
       });
       printOutput(data, opts.output as OutputFormat);
     });
@@ -1363,13 +1449,14 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       const { from, to } = resolveTimeRange(opts);
       const data = await client.llmList({
+        ...scrollParams(opts),
         env: opts.env ?? getDefaultEnv(),
         from,
         to,
         query: opts.query,
         pageSize: Number.parseInt(opts.limit, 10),
       });
-      printOutput(data, opts.output as OutputFormat);
+      await printPageOutput(data, opts, 'spanItems');
     });
 
   // ─── rum ─────────────────────────────────────────────────
@@ -1389,23 +1476,34 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       const { from, to } = resolveTimeRange(opts);
       const data = await client.rumList({
+        ...scrollParams(opts),
         env: opts.env ?? getDefaultEnv(),
         from,
         to,
         query: opts.query,
         pageSize: Number.parseInt(opts.limit, 10),
       });
-      printOutput(data, opts.output as OutputFormat);
+      await printPageOutput(data, opts, 'rumItems');
     });
 
   rum
     .command('detail')
     .description('Get RUM event detail')
     .argument('<id>', 'RUM event ID')
+    .requiredOption(
+      '--timestamp <time>',
+      'Event timestamp from rum list: epoch ms, epoch seconds, or ISO time',
+      parseTimestamp
+    )
+    .option('-e, --env <env>', 'Environment: online or test')
     .option('-o, --output <fmt>', 'Output format', 'json')
     .action(async (id, opts) => {
       const client = getClient();
-      const data = await client.rumDetail(id);
+      const data = await client.rumDetail(
+        id,
+        opts.env ?? getDefaultEnv(),
+        opts.timestamp
+      );
       printOutput(data, opts.output as OutputFormat);
     });
 
@@ -1442,6 +1540,7 @@ export function registerCommands(program: Command): void {
         aggregationField: aggregationFields,
         groupFieldList: groupFields.length ? groupFields : undefined,
       });
+      warnMissingGroups(data, groupFields);
       printOutput(data, opts.output as OutputFormat);
     });
 
@@ -1462,13 +1561,14 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       const { from, to } = resolveTimeRange(opts);
       const data = await client.eventList({
+        ...scrollParams(opts),
         env: opts.env ?? getDefaultEnv(),
         from,
         to,
         query: opts.query,
         pageSize: Number.parseInt(opts.limit, 10),
       });
-      printOutput(data, opts.output as OutputFormat);
+      await printPageOutput(data, opts, 'eventItems');
     });
 
   events
@@ -1504,6 +1604,7 @@ export function registerCommands(program: Command): void {
         aggregationField: aggregationFields,
         groupFieldList: groupFields.length ? groupFields : undefined,
       });
+      warnMissingGroups(data, groupFields);
       printOutput(data, opts.output as OutputFormat);
     });
 
@@ -1717,4 +1818,35 @@ export function registerCommands(program: Command): void {
       const data = await client.usersSearch(names);
       printOutput(data, opts.output as OutputFormat);
     });
+
+  for (const command of [
+    program.commands.find((c) => c.name() === 'llm'),
+    rum.commands.find((c) => c.name() === 'list'),
+    events.commands.find((c) => c.name() === 'list'),
+  ]) {
+    command
+      ?.option('--scroll-id <id>', 'Boundary record id from the previous page')
+      .option(
+        '--cursor-file <path>',
+        'Atomically write page continuation metadata'
+      )
+      .option(
+        '--scroll-type <type>',
+        'Page direction: pre or next; set explicitly when continuing'
+      )
+      .option(
+        '--serialized-sort-values <value>',
+        'Opaque serializedSortValues from the boundary record'
+      )
+      .option('--sort <field>', 'Sort field; omit to use the backend default')
+      .option(
+        '--sort-order <order>',
+        'Sort direction: asc or desc (default with --sort: desc)'
+      )
+      .option(
+        '--sort-operation <operation>',
+        'Optional backend sort operationEnum; requires --sort'
+      );
+  }
+  configureCommandHelp(program);
 }

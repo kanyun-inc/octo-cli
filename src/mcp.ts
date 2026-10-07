@@ -19,6 +19,7 @@ import {
 import { parsePositiveInteger } from './aggregate.js';
 import { normalizeAlertScope, OctoClient } from './client.js';
 import { getBaseUrl, getCredentials, getDefaultEnv } from './config.js';
+import { ApiError } from './errors.js';
 
 function getClient(): OctoClient {
   const credentials = getCredentials();
@@ -30,11 +31,16 @@ function ok(text: string) {
 }
 
 function fail(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  const prefix =
+    err instanceof ApiError
+      ? `HTTP ${err.status}${err.code === undefined ? '' : `, code=${err.code}`}: `
+      : '';
   return {
     content: [
       {
         type: 'text' as const,
-        text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        text: `Error: ${prefix}${message}`,
       },
     ],
     isError: true,
@@ -648,6 +654,15 @@ export function getMcpTools() {
       inputSchema: {
         type: 'object' as const,
         properties: {
+          dataSource: {
+            type: 'string',
+            description: 'Issue source: log or rum; backend default: log',
+            enum: ['log', 'rum'],
+          },
+          service: {
+            type: 'string',
+            description: 'Legacy service filter; prefer service = ... in query',
+          },
           env: envProp,
           from: fromProp,
           to: toProp,
@@ -672,6 +687,11 @@ export function getMcpTools() {
         type: 'object' as const,
         properties: {
           issueId: { type: 'string', description: 'Issue ID' },
+          dataSource: {
+            type: 'string',
+            description: 'Issue source: log or rum; backend default: log',
+            enum: ['log', 'rum'],
+          },
         },
         required: ['issueId'],
       },
@@ -1017,6 +1037,15 @@ export function getMcpTools() {
             type: 'string',
             enum: ['asc', 'desc'],
           },
+          scrollId: {
+            type: 'string',
+            description:
+              'Last record id from the previous page, not traceId/spanId',
+          },
+          serializedSortValues: {
+            type: 'string',
+            description: 'Opaque sort value from the same boundary record',
+          },
         },
       },
     },
@@ -1053,7 +1082,8 @@ export function getMcpTools() {
     {
       name: 'octo_metrics_query',
       description:
-        'Query Octopus metrics timeseries. Use metric query syntax like "sum(metric_name{tag=value}.as_count)". ' +
+        'Query Octopus metrics timeseries. Use Metric QL such as "as_count(sum(metric_name{tag=value}) by (service))". ' +
+        'by is a space-aggregation suffix inside as_count/as_rate, not a suffix of the wrapper. ' +
         'Daily (1d) aggregation is aligned to midnight in UTC+8 (Beijing time).',
       inputSchema: {
         type: 'object' as const,
@@ -1065,7 +1095,7 @@ export function getMcpTools() {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Metric query strings, e.g. ["sum(http_requests{service=myapp}.as_count)"]',
+              'Metric QL strings, e.g. ["as_count(sum(http_requests{service=myapp}) by (service))"]',
           },
           point_count: {
             type: 'number',
@@ -1078,7 +1108,8 @@ export function getMcpTools() {
     {
       name: 'octo_metrics_point',
       description:
-        'Query Octopus metrics at one point in time. Use metric query syntax like "sum(metric_name{tag=value}.as_count)".',
+        'Query Octopus metrics at one point in time. Use Metric QL such as "as_count(sum(metric_name{tag=value}) by (service))". ' +
+        'by is a space-aggregation suffix inside as_count/as_rate, not a suffix of the wrapper.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -1092,7 +1123,7 @@ export function getMcpTools() {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Metric query strings, e.g. ["sum(http_requests{service=myapp}.as_count)"]',
+              'Metric QL strings, e.g. ["as_count(sum(http_requests{service=myapp}) by (service))"]',
           },
         },
         required: ['queries'],
@@ -1177,13 +1208,20 @@ export function getMcpTools() {
     },
     {
       name: 'octo_rum_detail',
-      description: 'Get Octopus RUM event detail by event ID.',
+      description:
+        'Get Octopus RUM event detail using the ID and timestamp returned by RUM list. The backend searches within one hour on either side of the timestamp.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           id: { type: 'string', description: 'RUM event ID' },
+          env: envProp,
+          timestamp: {
+            type: 'integer',
+            minimum: 0,
+            description: 'Event timestamp from RUM list, in epoch milliseconds',
+          },
         },
-        required: ['id'],
+        required: ['id', 'timestamp'],
       },
     },
     {
@@ -1525,12 +1563,17 @@ export async function handleMcpTool(
           query: args.query as string | undefined,
           status: (args.status as string) ?? 'unresolved',
           sortType: (args.sort_type as string) ?? 'logCount',
+          dataSource: args.dataSource as string | undefined,
+          service: args.service as string | undefined,
         });
         return ok(JSON.stringify(data, null, 2));
       }
 
       case 'octo_issues_detail': {
-        const data = await client.issueDetail(String(args.issueId));
+        const data = await client.issueDetail(
+          String(args.issueId),
+          args.dataSource as string | undefined
+        );
         return ok(JSON.stringify(data, null, 2));
       }
 
@@ -1688,6 +1731,8 @@ export async function handleMcpTool(
           query: args.query as string | undefined,
           limit: args.limit as number | undefined,
           order: args.order as string | undefined,
+          scrollId: args.scrollId as string | undefined,
+          serializedSortValues: args.serializedSortValues as string | undefined,
         });
         return ok(JSON.stringify(data, null, 2));
       }
@@ -1807,7 +1852,11 @@ export async function handleMcpTool(
       }
 
       case 'octo_rum_detail': {
-        const data = await client.rumDetail(String(args.id));
+        const data = await client.rumDetail(
+          String(args.id),
+          String(args.env ?? getDefaultEnv()),
+          args.timestamp as number
+        );
         return ok(JSON.stringify(data, null, 2));
       }
 

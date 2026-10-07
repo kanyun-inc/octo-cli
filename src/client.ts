@@ -1,4 +1,10 @@
-import { getExtraHeaders } from './config.js';
+import {
+  getDefaultEnv,
+  getExtraHeaders,
+  validateEnvironment,
+} from './config.js';
+import { ApiError } from './errors.js';
+import { getMetricSyntaxHints } from './metric-ql.js';
 
 declare const __PKG_VERSION__: string;
 
@@ -253,12 +259,26 @@ export class OctoClient {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`${res.status} ${res.statusText}: ${text}`.trim());
+      let body: { code?: number; message?: string } = {};
+      try {
+        body = JSON.parse(text) ?? {};
+      } catch {
+        // Gateways can return plain text or HTML instead of the API envelope.
+      }
+      throw new ApiError(
+        body.message || text || res.statusText || 'Request failed',
+        res.status,
+        body.code
+      );
     }
 
     const json = (await res.json()) as ApiResponse<T>;
     if (json.code !== 0) {
-      throw new Error(`API error (code=${json.code}): ${json.message}`);
+      throw new ApiError(
+        json.message || 'Invalid API response',
+        res.status,
+        json.code
+      );
     }
     return json.data;
   }
@@ -459,16 +479,28 @@ export class OctoClient {
     sortType: string;
     status: string;
     service?: string;
+    dataSource?: string;
   }) {
     return this.post(
       '/infra-octopus-openapi/v1/log-error-tracking/issues/search',
-      params
+      {
+        ...params,
+        dataSource:
+          params.dataSource === undefined
+            ? undefined
+            : normalizeIssueDataSource(params.dataSource),
+      }
     );
   }
 
-  async issueDetail(issueId: string) {
+  async issueDetail(issueId: string, dataSource?: string) {
+    const normalizedIssueId = normalizeIssueId(issueId, 'issueId');
+    const qs =
+      dataSource === undefined
+        ? ''
+        : `?dataSource=${normalizeIssueDataSource(dataSource)}`;
     return this.get(
-      `/infra-octopus-openapi/v1/log-error-tracking/issues/${issueId}`
+      `/infra-octopus-openapi/v1/log-error-tracking/issues/${encodeURIComponent(normalizedIssueId)}${qs}`
     );
   }
 
@@ -490,7 +522,7 @@ export class OctoClient {
   }) {
     return this.post(
       '/infra-octopus-openapi/v1/log-error-tracking/issues/batch-assign',
-      params
+      { ...params, dataSource: normalizeIssueDataSource(params.dataSource) }
     );
   }
 
@@ -503,7 +535,7 @@ export class OctoClient {
   }) {
     return this.put(
       '/infra-octopus-openapi/v1/log-error-tracking/issues/batch-update',
-      params
+      { ...params, dataSource: normalizeIssueDataSource(params.dataSource) }
     );
   }
 
@@ -661,6 +693,7 @@ export class OctoClient {
     limit?: number;
     order?: string;
     scrollId?: string;
+    serializedSortValues?: string;
   }) {
     return this.post('/infra-octopus-openapi/v1/trace/span/list', params);
   }
@@ -682,6 +715,29 @@ export class OctoClient {
 
   // --- Metrics ---
 
+  /** Add guidance only after the server rejects metric QL; preserve the failure. */
+  private async queryMetrics<
+    T extends { queries: { id: string; query: string }[] },
+  >(path: string, params: T) {
+    try {
+      return await this.post(path, params);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === -201) {
+        const hints = params.queries.flatMap(({ id, query }) => {
+          const queryHints =
+            typeof query === 'string'
+              ? getMetricSyntaxHints(query, error.message)
+              : [];
+          return queryHints.map(
+            (hint) => `Query ${JSON.stringify(id)}: ${hint}`
+          );
+        });
+        if (hints.length) error.hints = hints;
+      }
+      throw error;
+    }
+  }
+
   async metricsTimeseries(params: {
     env: string;
     from: number;
@@ -689,10 +745,10 @@ export class OctoClient {
     pointCount?: number;
     queries: { id: string; query: string; dataSource: string }[];
   }) {
-    return this.post('/infra-octopus-openapi/v1/metrics/query/timeseries', {
-      ...params,
-      userUtcHour: 8,
-    });
+    return this.queryMetrics(
+      '/infra-octopus-openapi/v1/metrics/query/timeseries',
+      { ...params, userUtcHour: 8 }
+    );
   }
 
   async metricsQuery(params: {
@@ -700,7 +756,7 @@ export class OctoClient {
     to: number;
     queries: { id: string; query: string; dataSource: string }[];
   }) {
-    return this.post(
+    return this.queryMetrics(
       '/infra-octopus-openapi/v1/metrics/query/queryMetric',
       params
     );
@@ -777,8 +833,23 @@ export class OctoClient {
     return this.post('/infra-octopus-openapi/v1/rum/list', params);
   }
 
-  async rumDetail(id: string) {
-    return this.get(`/infra-octopus-openapi/v1/rum/${id}`);
+  async rumDetail(
+    id: string,
+    env: string = getDefaultEnv(),
+    timestamp: number
+  ) {
+    if (!Number.isSafeInteger(timestamp) || timestamp < 0) {
+      throw new Error(
+        'RUM detail requires the event timestamp in epoch milliseconds'
+      );
+    }
+    const qs = new URLSearchParams({
+      env: validateEnvironment(env),
+      timestamp: String(timestamp),
+    });
+    return this.get(
+      `/infra-octopus-openapi/v1/rum/${encodeURIComponent(id)}?${qs}`
+    );
   }
 
   async rumAggregate(params: {

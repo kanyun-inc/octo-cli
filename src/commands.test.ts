@@ -132,7 +132,7 @@ describe('commands', () => {
   it('issues update maps TIME ignore rule into request payload', async () => {
     vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
     vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
-    vi.stubEnv('OCTOPUS_ENV', 'default-env');
+    vi.stubEnv('OCTOPUS_ENV', 'test');
     const calls: { body: string }[] = [];
     vi.stubGlobal(
       'fetch',
@@ -173,7 +173,7 @@ describe('commands', () => {
 
     expect(JSON.parse(calls[0].body)).toEqual({
       dataSource: 'log',
-      env: 'default-env',
+      env: 'test',
       issueIds: ['ISSUE-1'],
       status: 'ignored',
       ignoreRule: {
@@ -556,7 +556,7 @@ describe('commands', () => {
     function setupCli() {
       vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
       vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
-      vi.stubEnv('OCTOPUS_ENV', 'default-env');
+      vi.stubEnv('OCTOPUS_ENV', 'test');
       const calls: { url: string; body: string }[] = [];
       vi.stubGlobal(
         'fetch',
@@ -607,7 +607,7 @@ describe('commands', () => {
         'https://example.com/infra-octopus-openapi/v1/rum/aggregate'
       );
       expect(JSON.parse(calls[0].body)).toEqual({
-        env: 'default-env',
+        env: 'test',
         from: 1_700_000_000_000,
         to: 1_700_003_600_000,
         aggregationField: [
@@ -697,7 +697,7 @@ describe('commands', () => {
         'https://example.com/infra-octopus-openapi/v1/event/aggregate'
       );
       expect(JSON.parse(calls[0].body)).toEqual({
-        env: 'default-env',
+        env: 'test',
         from: 1_700_000_000_000,
         to: 1_700_003_600_000,
         aggregationField: [{ field: '*', operation: 'count' }],
@@ -821,7 +821,7 @@ describe('commands', () => {
     function setupCli(data: unknown = null) {
       vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
       vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
-      vi.stubEnv('OCTOPUS_ENV', 'default-env');
+      vi.stubEnv('OCTOPUS_ENV', 'test');
       const calls: { url: string; method: string; body: string }[] = [];
       vi.stubGlobal(
         'fetch',

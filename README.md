@@ -72,6 +72,20 @@ octo-cli 的解法是三层结构：**上下文**（这个项目跑了什么、�
 
 ## 快速开始
 
+CLI 可以独立使用，不需要安装 skill 或执行项目 `init`：
+
+```bash
+npx octo-cli login --token <YOUR_PERSONAL_ACCESS_TOKEN> --skip-skill
+npx octo-cli logs search -e online -q "service = myapp AND level = ERROR" -l 15m
+npx octo-cli --help                  # 认证、配置、命令入口与错误契约
+npx octo-cli logs --help             # 任务入口、常用选项及默认值
+npx octo-cli logs search --help      # 参数值域、示例、查询语义与翻页
+```
+
+每个子命令的 `--help` 都包含示例。环境参数只接受 `online`、`test`；多数查询使用 `OCTOPUS_ENV` → 配置 `env` → `online`，但 `alerts search`、`alerts rules`、`event-subscriptions list` 未传 `--env` 时查询所有环境。
+
+以下是可选的 Agent 项目上下文接入流程：
+
 ```bash
 # 一条命令完成所有准备（保存凭证 + 全局安装 Skill）
 npx octo-cli login --token <YOUR_PERSONAL_ACCESS_TOKEN>
@@ -98,7 +112,7 @@ Octopus 的 URL 参数是语义化的（`env`、`query`、`time`、`application`
 
 ## 命令
 
-所有查询命令共享这些选项：
+时间范围查询通常支持这些选项，具体以子命令 `--help` 为准（详情查询与部分列表没有时间范围选项）：
 
 | 选项 | 说明 | 示例 |
 |------|------|------|
@@ -129,6 +143,27 @@ octo-cli logs search --from 2024-01-01T00:00:00Z --to 2024-01-01T01:00:00Z
 octo-cli logs aggregate -q "level = ERROR" -g service    # 按服务聚合
 octo-cli logs aggregate -a "*:count" -g level:5 -l 30m   # 按 level 聚合 Top 5
 ```
+
+HTTP 500/5xx 可以先按接口聚合，快速定位错误入口和数量。对于 `leo-exam` 这类输出 servlet HTTP 错误日志的服务，使用 `log_type = http` 筛选 HTTP 日志、`sc` 筛选响应状态码，再按 `_jakarta.servlet.error.request_uri`（原始出错请求 URI）分组；字段名的前导下划线和点号必须保留。
+
+```bash
+# HTTP 500：固定时间窗，按原始请求 URI 的总日志数降序取 Top 10
+octo-cli logs aggregate -e online \
+  -q "service = leo-exam AND log_type = http AND sc = 500" \
+  --from 1790593581941 --to 1790603918735 \
+  -g "_jakarta.servlet.error.request_uri:10" -a "*:count" -o json > http500.json
+
+# 仅输出 URI 和数量；fields:{} 是总计行，单独识别，不当成接口
+jq -r '.[] | select(.fields["_jakarta.servlet.error.request_uri"] != null) |
+  [.fields["_jakarta.servlet.error.request_uri"], .values["count(*)"]] | @tsv' http500.json
+
+# 最近 30 分钟的全部 5xx（含 500、502、503 等）
+octo-cli logs aggregate -e online \
+  -q "service = leo-exam AND log_type = http AND sc >= 500 AND sc <= 599" \
+  -l 30m -g "_jakarta.servlet.error.request_uri:10" -a "*:count" -o json
+```
+
+HTTP 日志的 level 可以不同，因此这里直接使用 `log_type = http`。该 URI 字段需要由日志采集实际输出并在当前索引可分组；没有它的错误日志不能归到 URI 分组，Top 10 也只覆盖部分接口，分组数量之和未必等于总计。选中接口后，在相同环境和固定时间窗内使用 `logs search`，追加 `_jakarta.servlet.error.request_uri = "/selected/path"`，取少量样例及 `trace_id` 继续定位。其他数据源的状态码和 URI 字段可能不同，可用 `-g <field>:2` 探测。
 
 ### 告警
 
@@ -215,12 +250,30 @@ octo-cli inspection reports --task-group infra-db         # 按任务组名过�
 octo-cli trace search -q "service = myapp" -l 15m        # 搜索 Span
 octo-cli trace aggregate -a "duration:p95" -g service     # 按服务聚合 P95 延迟
 
-octo-cli metrics query "sum(http_requests{}.as_count)" -l 1h       # 时序查询
+octo-cli metrics query "as_count(sum(http_requests{}))" -l 1h       # 时序查询
 octo-cli metrics query "avg(cpu_usage{service=myapp})" --points 50  # 指定数据点数
-octo-cli metrics point "sum(error_count{}.as_count)"                 # 单点查询
+octo-cli metrics point "as_count(sum(error_count{}))"                 # 单点查询
 ```
 
 指标时序查询（`metrics query` / MCP `octo_metrics_query`）默认使用 UTC+8（北京时间）对齐日聚合边界，查询时间戳保持不变。
+
+`by (...)` 紧跟空间聚合函数右括号，例如 `as_rate(sum(m{}) by (service))`，不能写成 `as_rate(sum(m{})) by (service)`。`metrics query`／`metrics point` 收到后端 QL 语法错误（`-201`）时，会针对已识别的 `by` 错位或 PromQL 风格 `tag =~ "regex"` 追加 `Hint:`，多查询提示带查询编号；`--json-errors` 使用可选的 `error.hints` 数组。`=~` 提示使用 `=` 精确匹配、`IN (...)` 列表或 `=` 搭配 `*` 通配；正则与通配语义不同，不自动转换。字符串值里的 `=~` 不触发。原始错误、HTTP status/API code 和非零退出码保持不变，不自动改写 QL。完整正反例见 `metrics query --help`。
+
+HTTP 错误也可以用内置 Trace/APM Count 指标 `trace.service.errors` 按接口观察：`entry_type = http` 限定 HTTP 入口，`http.status_code = 500` 精确筛选 500，`http.status_code = 5*` 筛选全部 5xx；接口维度使用 `operation` 和 `span.name`。
+
+```bash
+# 各 HTTP 接口的 500 次数曲线：每个值是对应时间桶内的次数
+octo-cli metrics query \
+  "as_count(sum(trace.service.errors{service = leo-exam, entry_type = http, http.status_code = 500}) by (operation, span.name))" \
+  -e online -l 30m -o json > http500-metrics.json
+
+# 5xx 每秒错误数曲线：按峰值选出 Top 10 接口
+octo-cli metrics query \
+  "top(as_rate(sum(trace.service.errors{service = leo-exam, entry_type = http, http.status_code = 5*}) by (operation, span.name)), 10, max)" \
+  -e online -l 30m -o json > http5xx-metrics.json
+```
+
+这些指标需要启用 Trace/APM 采集。`span.name` 通常是规范化的路由模板，与日志中的原始 URI 不同；`log_type` 和 `_jakarta.servlet.error.request_uri` 是日志字段，不是内置指标标签。`as_count` 返回每桶次数，`as_rate` 返回每秒次数，`top(..., 10, max)` 按曲线峰值排序，不能当成整窗总次数排名。采集和错误判定口径、时间桶边界也会让指标数量与日志数量不同；需要按原始 URI 统计查询时间窗内的日志总量时，使用上面的 `logs aggregate`。分组指标响应的 `labelList[i]` 与 `values[i]` 按索引对应，解析示例见 `octo-cli metrics query --help`。
 
 ### 服务 / LLM / RUM / 事件 / 用户
 
@@ -231,7 +284,7 @@ octo-cli services topo myapp                              # 服务拓扑图
 
 octo-cli llm -l 1h -q "model.name = gpt-4"              # LLM 可观测
 octo-cli rum list -e test -q "application.name = myapp" -l 1d   # RUM 会话
-octo-cli rum detail <id>                                  # RUM 事件详情
+octo-cli rum detail <id> --timestamp <event-time>          # RUM 事件详情，时间取自 list
 octo-cli rum aggregate -q "type = view" -a "*:count" -g "view.name:10" -l 1h
 octo-cli events -l 1d                                     # 部署事件
 octo-cli events aggregate -a "*:count" -g "type:10" -l 1d
@@ -278,7 +331,73 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 
 ## Unix 管道
 
-所有命令输出到 stdout，支持 `json` 和 `jsonl` 两种格式，天然适配 `jq`、`grep`、`sort`、`awk`。这不是附加功能，而是核心设计 —— 可观测数据的价值在于**组合和关联**，而不是一条条孤立地看。
+查询数据输出到 stdout，诊断和翻页提示输出到 stderr。`json` 保留完整 API 响应；`jsonl` 每行一条记录，自动展开 `logs`、`spanItems`、`rumItems`、`eventItems`、`issues`、`list` 等列表包装；`table` 同样按记录显示列。需要分页信息时，可使用 `json`，或通过 `--cursor-file` 单独写入元数据。JSONL 配合 cursor 文件可让脚本处理日志并续页，只把摘要与必要样本交给 agent，无需再请求同一页的 JSON。
+
+```bash
+# JSONL 是逐条日志，不是整页包装；每条记录保留 id 与 sort 值
+octo-cli logs search -q "service = myapp" -l 15m -o jsonl | jq -r '.message'
+
+# 翻页时固定环境、查询、排序与绝对时间窗口
+octo-cli logs search -q "service = myapp" \
+  --from 1790596500000 --to 1790596800000 -n 500 -o json > page.json
+jq '{hasMore, lastId: .logs[-1].id}' page.json
+octo-cli logs search -q "service = myapp" \
+  --from 1790596500000 --to 1790596800000 -n 500 --scroll-id <LAST_LOG_ID>
+```
+
+日志 `--scroll-id` 使用上一页最后一条记录的 `id`，不能用 `serializedSortValues` 代替；官方接口说明后者应通过独立参数与 `scrollId` 配合使用。Trace 同样支持 `--scroll-id` 和 `--serialized-sort-values`，`--order` 按 Span 结束时间排序；LLM/RUM/事件还支持 `--scroll-type pre|next`、`--sort`、`--sort-order` 和 `--sort-operation`。具体游标配合方式见各自 `--help`。一次调用只返回一页。
+
+`logs search`、`trace search`、`llm`、`rum list`、`events list`（含默认 `events`）支持 `--cursor-file <path>`，与 `json/jsonl/table` 正交。每次成功查询都通过同目录临时文件和 rename 原子覆盖，写入单行 JSON：
+
+| 页面状态 | cursor 文件内容 |
+| --- | --- |
+| 后端明确还有下一页 | `{"hasMore":true,"count":N,"scrollId":"...","serializedSortValues":"..."}` |
+| 后端明确为终页 | `{"hasMore":false,"count":N}`，清除旧续页字段 |
+| 后端未提供 hasMore/lastPage，如当前 RUM list | `{"hasMore":null,"count":N,...}`；非空页携带边界游标，空页不含游标 |
+
+`count` 是本页实际记录数；不根据满页、少量记录或空页猜测 `hasMore`。`serializedSortValues` 仅在边界记录返回非空字符串时写入，原样保留。日志/Trace 始终取最后一条记录，LLM/RUM/事件的 next 取最后一条、pre 取第一条；两个游标字段必须来自同一条记录。
+
+HTTP/API 失败和 cursor 文件写入失败都非零退出，并保持旧文件不变。**脚本只在 exit 0 后读取本次元数据**；旧文件仅用于重试，存在不代表本次成功。父目录须已存在，不自动创建目录或读取旧文件续页。多个查询任务、以及同一查询的并发续页 worker，应分别使用自己的文件；建议放在按任务创建的独立临时目录（如 `mktemp -d`）并在结束后清理。原子替换能防止读到半截文件，但不能防止并发写者覆盖彼此的更新。
+
+以下 Bash 示例把数据留在文件中，并显式续查一页；实际使用时替换服务与绝对时间窗口：
+
+```bash
+octo_query_args=(-q "service = myapp" -e online --from 1790596500000 --to 1790596800000 --order asc -n 500)
+octo-cli logs search "${octo_query_args[@]}" -o jsonl \
+  --cursor-file /tmp/logs.cursor > /tmp/logs.page1.jsonl || exit 1
+
+octo_has_more=$(jq -r '.hasMore' /tmp/logs.cursor)
+octo_next_id=$(jq -r '.scrollId // empty' /tmp/logs.cursor)
+octo_sort_values=$(jq -r '.serializedSortValues // empty' /tmp/logs.cursor)
+if [[ "$octo_has_more" != false && -n "$octo_next_id" ]]; then
+  octo_cursor_args=(--scroll-id "$octo_next_id")
+  if [[ -n "$octo_sort_values" ]]; then
+    octo_cursor_args+=(--serialized-sort-values "$octo_sort_values")
+  fi
+  octo-cli logs search "${octo_query_args[@]}" "${octo_cursor_args[@]}" -o jsonl \
+    --cursor-file /tmp/logs.cursor > /tmp/logs.page2.jsonl || exit 1
+fi
+```
+
+续页必须保持 env/query/from/to/order/sort/scroll-type 一致。LLM/RUM/事件翻页请显式设置方向；hasMore=null 表示完整性未知，可使用非空边界继续探查，不代表下一页一定有数据。此选项不适用于没有分页契约的 `issues search`。
+
+`issues search` 的后端接口固定最多返回 99 个 Issue，没有分页、条数或游标参数；`hasMore:true` 表示结果被截断，并不意味着存在下一页游标。需缩小服务、查询或时间范围，不能据一页结果声明已穷尽。JSONL/table 的 stderr 提示也会说明这一限制。
+
+`issues search` 和 `issues detail` 支持 `--source log|rum`，未指定时保持后端默认 `log`；查询 RUM Issue 请传 `--source rum`。它与 `rum detail` 查询原始 RUM 事件是不同入口。
+
+`rum detail` 必须提供列表记录的 `id`、`--timestamp`，并使用相同环境。时间支持毫秒、秒和 ISO 格式；后端在该时间前后各一小时查找记录，默认使用当前时间会漏掉历史事件，因此 CLI 不提供时间默认值。内置 MCP 的 `octo_rum_detail` 同样要求 `timestamp`，单位为 epoch 毫秒。
+
+```bash
+octo-cli rum list -e test -l 1h -o json > rum-page.json
+jq '.rumItems[] | {id, timestamp}' rum-page.json
+octo-cli rum detail <RUM_EVENT_ID> -e test --timestamp <TIMESTAMP_FROM_LIST>
+```
+
+分组只能使用对应数据源和索引中的分析字段。聚合中的 `fields:{}` 是总计，不能当成分组结果；请求字段没有出现在任何分组行时，CLI 会向 stderr 警告。用 `-g <field>:2` 对已知有匹配的数据试查。查询使用字段实名（例如 `status`），响应中的 `attributes.status` 是呈现路径。全文查询经过分词，不能把它当子串或前缀查询；零命中时用同一时间窗的已知匹配查询核对。
+
+`--from` / `--to` / `metrics point --at` 接受 epoch 毫秒、10 位 epoch 秒或 ISO 时间。`--to` 必须配合 `--from`，`--from` 优先于 `--last`。建议明确使用 `Z` 或 `+08:00`，避免本机时区差异。
+
+失败退出码为 `1`，stderr 输出简洁错误，不输出 Node 堆栈。需要脚本解析错误时添加全局 `--json-errors`，stderr 格式为 `{"error":{"message":"...","status":400,"code":-201}}`（非 API 错误没有 status/code）。HTTP 非 2xx 或 API 非零 code 不会作为成功数据输出。HTTP 429 / code -17 需调用方退避，当前不自动重试。服务端若将故障包装成成功空响应，CLI 无法据此识别内部故障。
 
 ```bash
 # 按 ERROR 数量排序找出最严重的服务
@@ -405,6 +524,8 @@ export OCTOPUS_EXTRA_HEADERS='{"X-Octopus-Tenant":"tenant-a"}'
 > 旧版 Application Key 登录方式（`--app-id` / `--app-secret`、`OCTOPUS_APP_ID` / `OCTOPUS_APP_SECRET`）不再生效。请改用 `--token` 或 `OCTOPUS_TOKEN`。
 
 ## API 参考
+
+官方 [OpenAPI 文档入口](https://octopus-docs.zhenguanyu.com/1b42090d16b681749335c62b3ed505be) 提供完整请求/响应定义。根命令、命令组和叶子命令的 `--help` 均包含入口或对应领域链接。当前 [Issue 搜索接口](https://octopus-docs.zhenguanyu.com/1b42090d16b681a4b2b5f600cd9a7ba7) 没有分页请求参数；已通过后端实现确认 `hasMore` 仅标记超过 99 条的结果截断。
 
 octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguanyu.com`：
 
