@@ -1005,3 +1005,324 @@ describe('OctoClient event subscription methods', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('OctoClient alert and Issue management writes', () => {
+  const client = new OctoClient('https://example.com', {
+    token: 'management-pat',
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('updates a complete rule without losing nested configuration or false values', async () => {
+    const calls = captureFetch();
+    const rule = {
+      id: 7,
+      name: 'latency',
+      ruleType: 'metric',
+      env: 'online',
+      priority: 'P1',
+      groupId: 2,
+      conditions: [
+        {
+          id: 8,
+          alertQueryInfo: {
+            query: 'avg(latency{})',
+            expressions: [{ active: false }],
+          },
+        },
+      ],
+      notice: { receivers: [], content: { title: '' } },
+      closeAlert: false,
+      extInfo: { isSceneTagLocked: false },
+      alertAnalysisMetadata: null,
+    };
+    await client.alertRuleUpdate(7, rule);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(
+      'https://example.com/infra-octopus-openapi/v1/alert/rules/7'
+    );
+    expect(calls[0].method).toBe('PUT');
+    expect(JSON.parse(calls[0].body)).toEqual(rule);
+    expect(calls[0].headers.Authorization).toBe('Bearer management-pat');
+  });
+
+  it.each([
+    ['close', 'PUT', '/close', (id: number) => client.alertClose(id)],
+    [
+      'cancel assignment',
+      'PUT',
+      '/assign/cancel',
+      (id: number) => client.alertCancelAssignment(id),
+    ],
+    ['claim', 'POST', '/claim', (id: number) => client.alertClaim(id)],
+  ] as const)(
+    '%s sends a bodyless action and rejects an invalid alert ID',
+    async (_name, method, suffix, invoke) => {
+      const calls = captureFetch();
+      await invoke(12);
+      expect(calls[0]).toMatchObject({
+        method,
+        url: `https://example.com/infra-octopus-openapi/v1/alerts/12${suffix}`,
+        body: '',
+      });
+      await expect(invoke(0)).rejects.toThrow('positive integer');
+      expect(calls).toHaveLength(1);
+    }
+  );
+
+  it('assigns alerts by trimmed LDAP and preserves backend ID precedence', async () => {
+    const calls = captureFetch();
+    await client.alertAssign(12, { assigneeLdap: ' alice ' });
+    await client.alertAssign(12, {
+      assigneeUserId: 9,
+      assigneeLdap: ' ignored ',
+    });
+    expect(calls[0]).toMatchObject({
+      method: 'PUT',
+      url: 'https://example.com/infra-octopus-openapi/v1/alerts/12/assign',
+    });
+    expect(JSON.parse(calls[0].body)).toEqual({ assigneeLdap: 'alice' });
+    expect(JSON.parse(calls[1].body)).toEqual({
+      assigneeUserId: 9,
+      assigneeLdap: 'ignored',
+    });
+  });
+
+  it('assigns Issues with legacy ID input or LDAP and cancels an encoded RUM Issue', async () => {
+    const calls = captureFetch();
+    await client.issuesBatchAssign({
+      assigneeId: 9,
+      assigneeLdap: 'ignored',
+      issueIds: [' a ', 'a'],
+      dataSource: 'log',
+    });
+    await client.issuesBatchAssign({
+      assigneeLdap: ' alice ',
+      issueIds: ['b'],
+      dataSource: 'rum',
+    });
+    await client.issueCancelAssignment(' issue id/1 ', 'rum');
+    expect(JSON.parse(calls[0].body)).toEqual({
+      assigneeId: 9,
+      issueIds: ['a'],
+      dataSource: 'log',
+    });
+    expect(JSON.parse(calls[1].body)).toEqual({
+      assigneeLdap: 'alice',
+      issueIds: ['b'],
+      dataSource: 'rum',
+    });
+    expect(calls[2]).toMatchObject({
+      method: 'DELETE',
+      url: 'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/issue%20id%2F1/assign?dataSource=rum',
+      body: '',
+    });
+  });
+
+  it('rejects invalid rule, assignee, source and Issue ID before sending a write', async () => {
+    const calls = captureFetch();
+    const invalidWrites = [
+      () => client.alertRuleUpdate(1, {}),
+      () => client.alertRuleUpdate(-1, { name: 'x' }),
+      () => client.alertAssign(1, {}),
+      () => client.alertAssign(1, { assigneeUserId: 0, assigneeLdap: 'alice' }),
+      () => client.issuesBatchAssign({ issueIds: ['a'], assigneeLdap: ' ' }),
+      () => client.issuesBatchAssign({ issueIds: [], assigneeId: 1 }),
+      () =>
+        client.issuesBatchAssign({
+          issueIds: ['a'],
+          assigneeId: 1,
+          dataSource: 'trace',
+        }),
+      () => client.issueCancelAssignment(' '),
+      () => client.issueCancelAssignment('a', 'trace'),
+    ];
+    for (const invoke of invalidWrites)
+      await expect(invoke()).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('OctoClient aggregation rule management', () => {
+  const client = new OctoClient('https://example.com', {
+    token: 'management-pat',
+  });
+  const path =
+    'https://example.com/infra-octopus-openapi/v1/error-tracking/process/pipelines';
+  const step = {
+    pipelineType: 'pipeline',
+    issuePipeline: { name: 'step', filter: '' },
+  } as const;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('creates a root step with explicit null positioning and edits only its content', async () => {
+    const calls = captureFetch();
+    await client.issueAggregationRulesCreate({
+      dataSource: 'log',
+      issuePipelineElement: step,
+    });
+    await client.issueAggregationRulesUpdate(12, {
+      dataSource: 'rum',
+      issuePipelineElement: step,
+    });
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      url: `${path}?dataSource=log`,
+    });
+    expect(JSON.parse(calls[0].body)).toEqual({
+      issuePipelineElement: step,
+      parentElementId: null,
+      previousElementId: null,
+    });
+    expect(calls[1]).toMatchObject({
+      method: 'PUT',
+      url: `${path}/12?dataSource=rum`,
+    });
+    expect(JSON.parse(calls[1].body)).toEqual({ issuePipelineElement: step });
+  });
+
+  it.each([0, 1, 2] as const)(
+    'preserves numeric rule type %i and original DSL',
+    async (type) => {
+      const calls = captureFetch();
+      const element = {
+        pipelineType: 'process',
+        issuePipelineProcess: {
+          name: 'rule',
+          type,
+          rule: 'line 1\n"quoted" \\ text',
+        },
+      } as const;
+      await client.issueAggregationRulesCreate({
+        dataSource: 'log',
+        issuePipelineElement: element,
+        parentElementId: 10,
+        previousElementId: 11,
+      });
+      expect(JSON.parse(calls[0].body)).toEqual({
+        issuePipelineElement: element,
+        parentElementId: 10,
+        previousElementId: 11,
+      });
+    }
+  );
+
+  it('uses exact list, delete, status, duplicate and move contracts', async () => {
+    const calls = captureFetch();
+    await client.issueAggregationRulesList('rum');
+    await client.issueAggregationRulesDelete(12, 'log');
+    await client.issueAggregationRulesStatus(13, false, 'rum');
+    await client.issueAggregationRulesDuplicate(14, 'log');
+    await client.issueAggregationRulesMove({
+      id: 15,
+      dataSource: 'rum',
+      parentElementId: 0,
+    });
+    expect(calls.map(({ method, url }) => [method, url])).toEqual([
+      ['GET', `${path}?dataSource=rum`],
+      ['DELETE', `${path}/12?dataSource=log`],
+      ['PUT', `${path}/13/status?dataSource=rum&enable=false`],
+      ['POST', `${path}/duplicate?dataSource=log`],
+      ['POST', `${path}/move?dataSource=rum`],
+    ]);
+    expect(calls.slice(0, 3).map(({ body }) => body)).toEqual(['', '', '']);
+    expect(JSON.parse(calls[3].body)).toEqual({ sourceId: 14 });
+    expect(JSON.parse(calls[4].body)).toEqual({
+      id: 15,
+      parentElementId: 0,
+      previousElementId: null,
+    });
+  });
+
+  it('rejects unsafe node shapes, invalid IDs, source and positioning before requests', async () => {
+    const calls = captureFetch();
+    const process = {
+      pipelineType: 'process',
+      issuePipelineProcess: { name: 'rule', type: 2, rule: 'dsl' },
+    } as const;
+    const invalidCalls = [
+      () => client.issueAggregationRulesList(''),
+      () =>
+        client.issueAggregationRulesCreate({
+          dataSource: 'log',
+          issuePipelineElement: process,
+        }),
+      () =>
+        client.issueAggregationRulesCreate({
+          dataSource: 'log',
+          issuePipelineElement: step,
+          previousElementId: 0,
+        }),
+      () =>
+        client.issueAggregationRulesCreate({
+          dataSource: 'log',
+          issuePipelineElement: step,
+          parentElementId: -1,
+        }),
+      () =>
+        client.issueAggregationRulesUpdate(1, {
+          dataSource: 'rum',
+          issuePipelineElement: process,
+        }),
+      () =>
+        client.issueAggregationRulesUpdate(1, {
+          dataSource: 'log',
+          issuePipelineElement: {
+            pipelineType: 'pipeline',
+            issuePipeline: { name: '' },
+          },
+        }),
+      () => client.issueAggregationRulesDelete(0, 'log'),
+      () =>
+        client.issueAggregationRulesStatus(
+          1,
+          'false' as unknown as boolean,
+          'log'
+        ),
+      () => client.issueAggregationRulesDuplicate(-1, 'rum'),
+      () =>
+        client.issueAggregationRulesMove({
+          id: 10,
+          dataSource: 'log',
+          parentElementId: 10,
+        }),
+      () =>
+        client.issueAggregationRulesMove({
+          id: 10,
+          dataSource: 'log',
+          previousElementId: 10,
+        }),
+    ];
+    for (const invoke of invalidCalls) await expect(invoke()).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('returns the backend tree unchanged and propagates write failures without replay', async () => {
+    const tree = {
+      pipelineElementVOS: [
+        { id: 10, status: 1, children: [{ id: 11, status: 2 }] },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 0, data: tree }))
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: -210, message: 'editing denied' }))
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await client.issueAggregationRulesList('log')).toEqual(tree);
+    await expect(client.issueAggregationRulesDelete(10, 'log')).rejects.toThrow(
+      'editing denied'
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

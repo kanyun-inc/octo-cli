@@ -17,7 +17,11 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { parsePositiveInteger } from './aggregate.js';
-import { normalizeAlertScope, OctoClient } from './client.js';
+import {
+  type IssueAggregationRuleElement,
+  normalizeAlertScope,
+  OctoClient,
+} from './client.js';
 import { getBaseUrl, getCredentials, getDefaultEnv } from './config.js';
 
 function getClient(): OctoClient {
@@ -94,6 +98,83 @@ const caseRelationTypeProp = {
   type: 'string',
   description: 'Case relation type: alert or issue',
   enum: ['alert', 'issue'],
+};
+
+const aggregationDataSourceProp = {
+  type: 'string',
+  enum: ['log', 'rum'],
+  description: 'Required aggregation data source: log or rum',
+};
+const aggregationNodeIdProp = {
+  type: 'integer',
+  minimum: 1,
+  description: 'Node ID from octo_issues_aggregation_rules_list',
+};
+const aggregationPositionProps = {
+  parentElementId: {
+    type: ['integer', 'null'],
+    minimum: 0,
+    description: 'Parent step ID; omit, null, or 0 for a top-level step',
+  },
+  previousElementId: {
+    type: ['integer', 'null'],
+    minimum: 1,
+    description:
+      'Previous sibling under the target parent; omit or null inserts first',
+  },
+};
+const aggregationRuleElementProp = {
+  type: 'object',
+  description:
+    'One aggregation step or rule with its complete editable content',
+  additionalProperties: false,
+  properties: {
+    pipelineType: { type: 'string', enum: ['pipeline', 'process'] },
+    issuePipeline: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        filter: {
+          type: ['string', 'null'],
+          maxLength: 2048,
+          description: 'Log or RUM filter; omitted or null clears the filter',
+        },
+      },
+      required: ['name'],
+    },
+    issuePipelineProcess: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        type: {
+          type: 'integer',
+          enum: [0, 1, 2],
+          description:
+            '0 fingerprint, 1 stack trace preprocessing, 2 stack depth; RUM supports only 0',
+        },
+        rule: {
+          type: 'string',
+          description: 'Complete rule DSL text, preserved without rewriting',
+        },
+      },
+      required: ['name', 'type', 'rule'],
+    },
+  },
+  required: ['pipelineType'],
+  oneOf: [
+    {
+      properties: { pipelineType: { const: 'pipeline' } },
+      required: ['issuePipeline'],
+      not: { required: ['issuePipelineProcess'] },
+    },
+    {
+      properties: { pipelineType: { const: 'process' } },
+      required: ['issuePipelineProcess'],
+      not: { required: ['issuePipeline'] },
+    },
+  ],
 };
 
 function timeDefaults(args: Record<string, unknown>): {
@@ -474,6 +555,102 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_alerts_rules_update',
+      description:
+        'Completely update an alert rule and return its updated detail. Read octo_alerts_rules_details_search first, modify the full configuration, then submit it. Conditions replace the complete collection; omitted old conditions are deleted. Existing condition IDs must belong to this rule. Rule type cannot change. Read-only detail fields are ignored by the backend. Optional closeAlert defaults to false; true also closes firing alerts from the previous version.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: { type: 'integer', minimum: 1, description: 'Alert rule ID' },
+          rule: {
+            type: 'object',
+            minProperties: 1,
+            description:
+              'Complete AlertRuleUpdateRequest from rule detail, including name, env, priority, groupId, ruleType, conditions and notice. May include closeAlert, extInfo, alertAnalysisMetadata and wechatworkMentionIds. Omitted extInfo or alertAnalysisMetadata preserves its current value.',
+          },
+        },
+        required: ['ruleId', 'rule'],
+      },
+    },
+    {
+      name: 'octo_alerts_close',
+      description:
+        'Manually close an alert, send manual-close notifications, and reset its repeat-notification state.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          alertId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Fired alert ID',
+          },
+        },
+        required: ['alertId'],
+      },
+    },
+    {
+      name: 'octo_alerts_assign',
+      description:
+        'Assign or reassign an alert to a user ID or LDAP. Provide at least one; the ID takes precedence. Alerts linked to a Case must be assigned through the Case. Sends assignment notifications.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          alertId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Fired alert ID',
+          },
+          assigneeUserId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Assignee user ID; takes precedence over LDAP',
+          },
+          assigneeLdap: {
+            type: 'string',
+            minLength: 1,
+            description: 'Assignee LDAP; surrounding whitespace is trimmed',
+          },
+        },
+        required: ['alertId'],
+        anyOf: [
+          { required: ['assigneeUserId'] },
+          { required: ['assigneeLdap'] },
+        ],
+      },
+    },
+    {
+      name: 'octo_alerts_assign_cancel',
+      description:
+        'Cancel an alert assignment and send assignment notifications. Alerts linked to a Case must be managed through the Case. An unassigned alert remains unchanged.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          alertId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Fired alert ID',
+          },
+        },
+        required: ['alertId'],
+      },
+    },
+    {
+      name: 'octo_alerts_claim',
+      description:
+        'Claim an unassigned alert for the authenticated PAT user and send assignment notifications. The backend rejects alerts already assigned or linked to a Case.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          alertId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Fired alert ID',
+          },
+        },
+        required: ['alertId'],
+      },
+    },
+    {
       name: 'octo_alerts_detail',
       description:
         'Get Octopus alert detail including rule conditions, trigger dimensions, and status.',
@@ -698,11 +875,21 @@ export function getMcpTools() {
     },
     {
       name: 'octo_issues_assign',
-      description: 'Batch assign Octopus error tracking issues to a user.',
+      description:
+        'Batch assign Octopus error tracking issues to a user ID or LDAP. Provide at least one assignee; userId takes precedence over assigneeLdap.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          userId: { type: 'number', description: 'Assignee user ID' },
+          userId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Assignee user ID; takes precedence over LDAP',
+          },
+          assigneeLdap: {
+            type: 'string',
+            minLength: 1,
+            description: 'Assignee LDAP; surrounding whitespace is trimmed',
+          },
           issueIds: {
             type: 'array',
             items: { type: 'string' },
@@ -710,10 +897,128 @@ export function getMcpTools() {
           },
           dataSource: {
             type: 'string',
+            enum: ['log', 'rum'],
             description: 'Data source: log or rum (default log)',
           },
         },
-        required: ['userId', 'issueIds'],
+        required: ['issueIds'],
+        anyOf: [{ required: ['userId'] }, { required: ['assigneeLdap'] }],
+      },
+    },
+    {
+      name: 'octo_issues_assign_cancel',
+      description:
+        'Clear the assignee of a single Issue. The backend validates the Issue and data source, records the operation and sends its assignment notification.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          issueId: {
+            type: 'string',
+            minLength: 1,
+            description: 'Issue ID whose assignee to clear',
+          },
+          dataSource: {
+            type: 'string',
+            enum: ['log', 'rum'],
+            description: 'Data source; default log',
+          },
+        },
+        required: ['issueId'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_list',
+      description:
+        'List the ordered error-tracking aggregation step and rule tree. Returns node IDs, statuses, configuration and children for management operations.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: { dataSource: aggregationDataSourceProp },
+        required: ['dataSource'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_create',
+      description:
+        'Create one error-tracking aggregation step or rule, enabled by default. Rules require a parent step; steps support at most two levels. RUM permits fingerprint rules only (type 0). Requires the backend aggregation editing whitelist.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dataSource: aggregationDataSourceProp,
+          issuePipelineElement: aggregationRuleElementProp,
+          ...aggregationPositionProps,
+        },
+        required: ['dataSource', 'issuePipelineElement'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_update',
+      description:
+        'Replace the complete editable content of one aggregation node, preserving its kind, position and status. Read the tree first. Omitted or null step filter clears it. RUM permits only fingerprint rules (type 0). Requires the backend aggregation editing whitelist.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dataSource: aggregationDataSourceProp,
+          id: aggregationNodeIdProp,
+          issuePipelineElement: aggregationRuleElementProp,
+        },
+        required: ['dataSource', 'id', 'issuePipelineElement'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_delete',
+      description:
+        'Delete one aggregation rule or empty step. Nonempty steps are rejected; delete children first. Requires the backend aggregation editing whitelist.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dataSource: aggregationDataSourceProp,
+          id: aggregationNodeIdProp,
+        },
+        required: ['dataSource', 'id'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_status',
+      description:
+        'Enable or disable an aggregation step or rule. Requires the backend aggregation editing whitelist.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dataSource: aggregationDataSourceProp,
+          id: aggregationNodeIdProp,
+          enable: {
+            type: 'boolean',
+            description: 'true to enable, false to disable',
+          },
+        },
+        required: ['dataSource', 'id', 'enable'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_duplicate',
+      description:
+        'Copy an aggregation step and its descendants immediately after the source step. Individual process rules cannot be copied. Read the tree after success to find generated IDs. Requires the backend aggregation editing whitelist.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dataSource: aggregationDataSourceProp,
+          sourceId: aggregationNodeIdProp,
+        },
+        required: ['dataSource', 'sourceId'],
+      },
+    },
+    {
+      name: 'octo_issues_aggregation_rules_move',
+      description:
+        'Move or reorder an aggregation step or rule. Rules require a parent step, steps support at most two levels, and the previous node must belong to the target parent. Requires the backend aggregation editing whitelist.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dataSource: aggregationDataSourceProp,
+          id: aggregationNodeIdProp,
+          ...aggregationPositionProps,
+        },
+        required: ['dataSource', 'id'],
       },
     },
     {
@@ -1436,6 +1741,37 @@ export async function handleMcpTool(
         return ok(`Alert rule ${ruleId} deleted`);
       }
 
+      case 'octo_alerts_rules_update': {
+        const data = await client.alertRuleUpdate(
+          args.ruleId as number,
+          args.rule as Record<string, unknown>
+        );
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_close': {
+        await client.alertClose(args.alertId as number);
+        return ok(`Alert ${args.alertId} closed`);
+      }
+
+      case 'octo_alerts_assign': {
+        await client.alertAssign(args.alertId as number, {
+          assigneeUserId: args.assigneeUserId as number | undefined,
+          assigneeLdap: args.assigneeLdap as string | undefined,
+        });
+        return ok(`Alert ${args.alertId} assigned`);
+      }
+
+      case 'octo_alerts_assign_cancel': {
+        await client.alertCancelAssignment(args.alertId as number);
+        return ok(`Assignment cancelled for alert ${args.alertId}`);
+      }
+
+      case 'octo_alerts_claim': {
+        await client.alertClaim(args.alertId as number);
+        return ok(`Alert ${args.alertId} claimed`);
+      }
+
       case 'octo_alerts_detail': {
         const data = await client.alertDetail(args.alertId as number);
         return ok(JSON.stringify(data, null, 2));
@@ -1544,11 +1880,91 @@ export async function handleMcpTool(
 
       case 'octo_issues_assign': {
         await client.issuesBatchAssign({
-          assigneeId: args.userId as number,
+          assigneeId: args.userId as number | undefined,
+          assigneeLdap: args.assigneeLdap as string | undefined,
           dataSource: (args.dataSource as string) ?? 'log',
           issueIds: args.issueIds as string[],
         });
         return ok('Issues assigned');
+      }
+
+      case 'octo_issues_assign_cancel': {
+        const issueId = String(args.issueId ?? '').trim();
+        await client.issueCancelAssignment(
+          issueId,
+          args.dataSource as string | undefined
+        );
+        return ok(`Assignment cancelled for Issue ${issueId}`);
+      }
+
+      case 'octo_issues_aggregation_rules_list': {
+        const data = await client.issueAggregationRulesList(
+          args.dataSource as string
+        );
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_aggregation_rules_create': {
+        const data = await client.issueAggregationRulesCreate({
+          dataSource: args.dataSource as string,
+          issuePipelineElement:
+            args.issuePipelineElement as IssueAggregationRuleElement,
+          parentElementId: args.parentElementId as number | null | undefined,
+          previousElementId: args.previousElementId as
+            | number
+            | null
+            | undefined,
+        });
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_issues_aggregation_rules_update': {
+        await client.issueAggregationRulesUpdate(args.id as number, {
+          dataSource: args.dataSource as string,
+          issuePipelineElement:
+            args.issuePipelineElement as IssueAggregationRuleElement,
+        });
+        return ok(`Aggregation node ${args.id} updated`);
+      }
+
+      case 'octo_issues_aggregation_rules_delete': {
+        await client.issueAggregationRulesDelete(
+          args.id as number,
+          args.dataSource as string
+        );
+        return ok(`Aggregation node ${args.id} deleted`);
+      }
+
+      case 'octo_issues_aggregation_rules_status': {
+        await client.issueAggregationRulesStatus(
+          args.id as number,
+          args.enable as boolean,
+          args.dataSource as string
+        );
+        return ok(
+          `Aggregation node ${args.id} ${args.enable ? 'enabled' : 'disabled'}`
+        );
+      }
+
+      case 'octo_issues_aggregation_rules_duplicate': {
+        await client.issueAggregationRulesDuplicate(
+          args.sourceId as number,
+          args.dataSource as string
+        );
+        return ok(`Aggregation step ${args.sourceId} copied`);
+      }
+
+      case 'octo_issues_aggregation_rules_move': {
+        await client.issueAggregationRulesMove({
+          id: args.id as number,
+          dataSource: args.dataSource as string,
+          parentElementId: args.parentElementId as number | null | undefined,
+          previousElementId: args.previousElementId as
+            | number
+            | null
+            | undefined,
+        });
+        return ok(`Aggregation node ${args.id} moved`);
       }
 
       case 'octo_issues_update': {

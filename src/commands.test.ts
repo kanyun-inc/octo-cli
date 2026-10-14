@@ -1393,4 +1393,505 @@ describe('commands', () => {
       });
     });
   });
+
+  describe('OpenAPI management commands', () => {
+    function setup(data: unknown = null) {
+      vi.stubEnv('OCTOPUS_TOKEN', 'test-token');
+      vi.stubEnv('OCTOPUS_BASE_URL', 'https://example.com');
+      const calls: { url: string; method: string; body: string }[] = [];
+      const fetch = vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: String(init.body ?? ''),
+        });
+        return new Response(JSON.stringify({ code: 0, data, message: 'ok' }));
+      });
+      vi.stubGlobal('fetch', fetch);
+      const stdout: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+        stdout.push(String(value));
+      });
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeErr: () => undefined });
+      registerCommands(program);
+      return { program, calls, fetch, stdout };
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('alerts update sends the full file object and prints updated rule details', async () => {
+      const rule = {
+        id: 42,
+        name: 'CPU alert',
+        env: 'online',
+        priority: 'P1',
+        groupId: 8,
+        ruleType: 'metric',
+        conditions: [
+          {
+            id: 9,
+            threshold: 0,
+            alertQueryInfo: { metricAlertQueryInfo: { queries: [] } },
+          },
+        ],
+        notice: { receivers: [], enableReduceNoise: false },
+        closeAlert: true,
+        extInfo: {},
+        alertAnalysisMetadata: { enabled: false },
+        wechatworkMentionIds: { 7: [] },
+      };
+      const updated = { ...rule, version: 2 };
+      const { program, calls, stdout } = setup(updated);
+      await program.parseAsync(
+        ['alerts', 'update', '42', '--file', writeJsonFixture(rule)],
+        { from: 'user' }
+      );
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alert/rules/42'
+      );
+      expect(calls[0].method).toBe('PUT');
+      expect(JSON.parse(calls[0].body)).toEqual(rule);
+      expect(stdout).toEqual([JSON.stringify(updated, null, 2)]);
+    });
+
+    it.each([
+      ['close', 'PUT', '/close'],
+      ['unassign', 'PUT', '/assign/cancel'],
+      ['claim', 'POST', '/claim'],
+    ])(
+      'alerts %s uses its exact route without a request body',
+      async (action, method, suffix) => {
+        const { program, calls, stdout } = setup();
+        await program.parseAsync(['alerts', action, '42'], { from: 'user' });
+
+        expect(calls).toEqual([
+          {
+            url: `https://example.com/infra-octopus-openapi/v1/alerts/42${suffix}`,
+            method,
+            body: '',
+          },
+        ]);
+        expect(stdout).toEqual(['null']);
+      }
+    );
+
+    it.each([
+      { flags: ['--user-id', '8'], expected: { assigneeUserId: 8 } },
+      { flags: ['--ldap', ' alice '], expected: { assigneeLdap: 'alice' } },
+      {
+        flags: ['--user-id', '8', '--ldap', ' alice '],
+        expected: { assigneeUserId: 8, assigneeLdap: 'alice' },
+      },
+    ])('alerts assign supports $flags', async ({ flags, expected }) => {
+      const { program, calls, stdout } = setup();
+      await program.parseAsync(['alerts', 'assign', '42', ...flags], {
+        from: 'user',
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe(
+        'https://example.com/infra-octopus-openapi/v1/alerts/42/assign'
+      );
+      expect(calls[0].method).toBe('PUT');
+      expect(JSON.parse(calls[0].body)).toEqual(expected);
+      expect(stdout).toEqual(['null']);
+    });
+
+    it.each([
+      { flags: ['--user', '8'], expected: { assigneeId: 8 } },
+      { flags: ['--user-id', '8'], expected: { assigneeId: 8 } },
+      { flags: ['--ldap', ' alice '], expected: { assigneeLdap: 'alice' } },
+      {
+        flags: ['--user', '7', '--user-id', '8', '--ldap', 'ignored'],
+        expected: { assigneeId: 8 },
+      },
+    ])(
+      'issues assign keeps ID compatibility and supports $flags',
+      async ({ flags, expected }) => {
+        const { program, calls } = setup();
+        await program.parseAsync(
+          [
+            'issues',
+            'assign',
+            '--ids',
+            ' issue-1 ,issue-2,issue-1',
+            '--source',
+            'rum',
+            ...flags,
+          ],
+          { from: 'user' }
+        );
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe(
+          'https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/batch-assign'
+        );
+        expect(calls[0].method).toBe('POST');
+        expect(JSON.parse(calls[0].body)).toEqual({
+          ...expected,
+          dataSource: 'rum',
+          issueIds: ['issue-1', 'issue-2'],
+        });
+      }
+    );
+
+    it.each([
+      { flags: [] as string[], source: 'log' },
+      { flags: ['--source', 'rum'], source: 'rum' },
+    ])(
+      'issues unassign encodes the ID and uses $source source',
+      async ({ flags, source }) => {
+        const { program, calls, stdout } = setup();
+        await program.parseAsync(
+          ['issues', 'unassign', ' issue id/1 ', ...flags],
+          { from: 'user' }
+        );
+
+        expect(calls).toEqual([
+          {
+            url: `https://example.com/infra-octopus-openapi/v1/log-error-tracking/issues/issue%20id%2F1/assign?dataSource=${source}`,
+            method: 'DELETE',
+            body: '',
+          },
+        ]);
+        expect(stdout).toEqual(['null']);
+      }
+    );
+
+    const aggregationPath =
+      'https://example.com/infra-octopus-openapi/v1/error-tracking/process/pipelines';
+
+    it('aggregation-rules list prints the ordered tree unchanged', async () => {
+      const tree = {
+        pipelineElementVOS: [{ id: 20, children: [{ id: 21 }] }, { id: 10 }],
+      };
+      const { program, calls, stdout } = setup(tree);
+      await program.parseAsync(
+        ['issues', 'aggregation-rules', 'list', '--source', 'rum'],
+        { from: 'user' }
+      );
+
+      expect(calls).toEqual([
+        { url: `${aggregationPath}?dataSource=rum`, method: 'GET', body: '' },
+      ]);
+      expect(stdout).toEqual([JSON.stringify(tree, null, 2)]);
+    });
+
+    it.each([
+      { flags: [] as string[], parentElementId: null, previousElementId: null },
+      {
+        flags: ['--parent-id', '0'],
+        parentElementId: 0,
+        previousElementId: null,
+      },
+      {
+        flags: ['--parent-id', '10', '--previous-id', '11'],
+        parentElementId: 10,
+        previousElementId: 11,
+      },
+    ])(
+      'aggregation-rules create maps positions $flags and wraps a node file',
+      async ({ flags, parentElementId, previousElementId }) => {
+        const element = {
+          pipelineType: 'pipeline',
+          issuePipeline: { name: 'payments', filter: 'service=payments' },
+        };
+        const { program, calls, stdout } = setup({ id: 12 });
+        await program.parseAsync(
+          [
+            'issues',
+            'aggregation-rules',
+            'create',
+            '--source',
+            'log',
+            '--file',
+            writeJsonFixture(element),
+            ...flags,
+          ],
+          { from: 'user' }
+        );
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe(`${aggregationPath}?dataSource=log`);
+        expect(calls[0].method).toBe('POST');
+        expect(JSON.parse(calls[0].body)).toEqual({
+          issuePipelineElement: element,
+          parentElementId,
+          previousElementId,
+        });
+        expect(stdout).toEqual([JSON.stringify({ id: 12 }, null, 2)]);
+      }
+    );
+
+    it('aggregation-rules update preserves complete process DSL without position fields', async () => {
+      const element = {
+        pipelineType: 'process',
+        issuePipelineProcess: {
+          name: 'fingerprint',
+          type: 0,
+          rule: 'first line\n"quoted" second line',
+        },
+      };
+      const { program, calls, stdout } = setup();
+      await program.parseAsync(
+        [
+          'issues',
+          'aggregation-rules',
+          'update',
+          '12',
+          '--source',
+          'rum',
+          '--file',
+          writeJsonFixture(element),
+        ],
+        { from: 'user' }
+      );
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe(`${aggregationPath}/12?dataSource=rum`);
+      expect(calls[0].method).toBe('PUT');
+      expect(JSON.parse(calls[0].body)).toEqual({
+        issuePipelineElement: element,
+      });
+      expect(stdout).toEqual(['null']);
+    });
+
+    it.each([
+      {
+        action: 'delete',
+        method: 'DELETE',
+        suffix: '/12?dataSource=log',
+        body: '',
+      },
+      {
+        action: 'enable',
+        method: 'PUT',
+        suffix: '/12/status?dataSource=log&enable=true',
+        body: '',
+      },
+      {
+        action: 'disable',
+        method: 'PUT',
+        suffix: '/12/status?dataSource=log&enable=false',
+        body: '',
+      },
+      {
+        action: 'duplicate',
+        method: 'POST',
+        suffix: '/duplicate?dataSource=log',
+        body: JSON.stringify({ sourceId: 12 }),
+      },
+    ])(
+      'aggregation-rules $action uses its management endpoint',
+      async ({ action, method, suffix, body }) => {
+        const { program, calls, stdout } = setup();
+        await program.parseAsync(
+          ['issues', 'aggregation-rules', action, '12', '--source', 'log'],
+          { from: 'user' }
+        );
+
+        expect(calls).toEqual([
+          { url: `${aggregationPath}${suffix}`, method, body },
+        ]);
+        expect(stdout).toEqual(['null']);
+      }
+    );
+
+    it.each([
+      { flags: [] as string[], parentElementId: null, previousElementId: null },
+      {
+        flags: ['--parent-id', '0'],
+        parentElementId: 0,
+        previousElementId: null,
+      },
+      {
+        flags: ['--parent-id', '10', '--previous-id', '11'],
+        parentElementId: 10,
+        previousElementId: 11,
+      },
+    ])(
+      'aggregation-rules move preserves selected positions $flags',
+      async ({ flags, parentElementId, previousElementId }) => {
+        const { program, calls } = setup();
+        await program.parseAsync(
+          [
+            'issues',
+            'aggregation-rules',
+            'move',
+            '12',
+            '--source',
+            'log',
+            ...flags,
+          ],
+          { from: 'user' }
+        );
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe(`${aggregationPath}/move?dataSource=log`);
+        expect(calls[0].method).toBe('POST');
+        expect(JSON.parse(calls[0].body)).toEqual({
+          id: 12,
+          parentElementId,
+          previousElementId,
+        });
+      }
+    );
+
+    it.each([
+      ['alerts', 'close', '0'],
+      ['alerts', 'claim', '1junk'],
+      ['alerts', 'unassign', '1.5'],
+      ['alerts', 'assign', '1'],
+      ['alerts', 'assign', '1', '--ldap', '  '],
+      ['alerts', 'assign', '1', '--user-id', '0', '--ldap', 'alice'],
+      ['issues', 'assign', '--ids', 'issue'],
+      ['issues', 'assign', '--ids', 'issue', '--user', '1junk'],
+      ['issues', 'assign', '--ids', 'issue', '--user-id', '0'],
+      ['issues', 'assign', '--ids', 'issue', '--ldap', '  '],
+      [
+        'issues',
+        'assign',
+        '--ids',
+        'issue',
+        '--user-id',
+        '1',
+        '--source',
+        'trace',
+      ],
+      ['issues', 'unassign', ' '],
+      ['issues', 'unassign', 'issue', '--source', 'trace'],
+      ['issues', 'aggregation-rules', 'list'],
+      ['issues', 'aggregation-rules', 'list', '--source', 'trace'],
+      ['issues', 'aggregation-rules', 'delete', '0', '--source', 'log'],
+      ['issues', 'aggregation-rules', 'enable', '1.5', '--source', 'log'],
+      ['issues', 'aggregation-rules', 'disable', '1junk', '--source', 'log'],
+      ['issues', 'aggregation-rules', 'duplicate', '0', '--source', 'log'],
+      [
+        'issues',
+        'aggregation-rules',
+        'move',
+        '1',
+        '--source',
+        'log',
+        '--parent-id',
+        '-1',
+      ],
+      [
+        'issues',
+        'aggregation-rules',
+        'move',
+        '1',
+        '--source',
+        'log',
+        '--previous-id',
+        '0',
+      ],
+      [
+        'issues',
+        'aggregation-rules',
+        'move',
+        '1',
+        '--source',
+        'log',
+        '--parent-id',
+        '1',
+      ],
+    ])('rejects invalid input before network: %j', async (...args) => {
+      const { program, fetch } = setup();
+      await expect(
+        program.parseAsync(args, { from: 'user' })
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      null,
+      [],
+      {},
+      {
+        issuePipelineElement: {
+          pipelineType: 'pipeline',
+          issuePipeline: { name: 'wrapped' },
+        },
+      },
+    ])(
+      'rejects invalid aggregation node files before network: %j',
+      async (element) => {
+        const { program, fetch } = setup();
+        await expect(
+          program.parseAsync(
+            [
+              'issues',
+              'aggregation-rules',
+              'create',
+              '--source',
+              'log',
+              '--file',
+              writeJsonFixture(element),
+            ],
+            { from: 'user' }
+          )
+        ).rejects.toThrow();
+        expect(fetch).not.toHaveBeenCalled();
+      }
+    );
+
+    it('rejects RUM stack rules and root process creation before network', async () => {
+      const { program, fetch } = setup();
+      const file = writeJsonFixture({
+        pipelineType: 'process',
+        issuePipelineProcess: { name: 'stack', type: 2, rule: 'rule' },
+      });
+      await expect(
+        program.parseAsync(
+          [
+            'issues',
+            'aggregation-rules',
+            'update',
+            '12',
+            '--source',
+            'rum',
+            '--file',
+            file,
+          ],
+          { from: 'user' }
+        )
+      ).rejects.toThrow();
+      const second = new Command();
+      registerCommands(second);
+      await expect(
+        second.parseAsync(
+          [
+            'issues',
+            'aggregation-rules',
+            'create',
+            '--source',
+            'log',
+            '--file',
+            file,
+          ],
+          { from: 'user' }
+        )
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it.each([null, [], {}])(
+      'rejects invalid full alert rule files before network: %j',
+      async (rule) => {
+        const { program, fetch } = setup();
+        await expect(
+          program.parseAsync(
+            ['alerts', 'update', '42', '--file', writeJsonFixture(rule)],
+            { from: 'user' }
+          )
+        ).rejects.toThrow();
+        expect(fetch).not.toHaveBeenCalled();
+      }
+    );
+  });
 });

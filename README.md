@@ -143,7 +143,15 @@ octo-cli alerts rules -e online -p P0,P1                  # 按环境/优先级�
 octo-cli alerts groups                                    # 查询全部告警组
 octo-cli alerts rule-details --ids 101,102                # 批量查询规则详情（最多 100 个）
 octo-cli alerts create --file rule.json                   # 从 JSON 创建告警规则
+octo-cli alerts update <ruleId> --file full-rule.json      # 完整更新已有规则
 octo-cli alerts delete <ruleId>                           # 删除告警规则
+
+# 处理已触发的告警
+octo-cli alerts close <alertId>                          # 手动关闭
+octo-cli alerts assign <alertId> --user-id 123            # 按用户 ID 指派
+octo-cli alerts assign <alertId> --ldap alice             # 按 LDAP 指派
+octo-cli alerts unassign <alertId>                       # 取消指派
+octo-cli alerts claim <alertId>                          # 当前 PAT 用户认领
 
 # 静默：只抑制某条已触发告警的通知
 octo-cli alerts silence --rule-id 1 --alert-id 2 --duration 2h
@@ -155,6 +163,12 @@ octo-cli alerts disables <ruleId>                         # 查看该规则的�
 octo-cli alerts enable <disableId>                        # 删除停用记录（传停用记录 id）
 ```
 
+`alerts update` 使用完整 PUT：先通过 `alerts rule-details --ids <ruleId>` 获取当前详情，从返回数组中取出目标规则对象，修改后保存为 `full-rule.json`，再提交更新。文件是单个规则对象，包含当前完整的条件、通知和其他可编辑配置；不是数组，也不是局部补丁。`conditions` 中保留的旧条件须带原 ID，新增条件不带 ID，未提交的旧条件会被删除。规则类型不能修改。
+
+`extInfo` 和 `alertAnalysisMetadata` 省略或为 null 时保留后端旧值；`closeAlert` 默认 false，设为 true 会同时关闭旧版本正在触发的告警。更新接口不提供版本冲突检查，提交前应重新读取当前配置，避免覆盖其他人的修改。成功返回更新后的规则详情。
+
+告警指派至少提供 `--user-id` 或 `--ldap`，同时提供时 ID 优先。认领使用当前 PAT 用户身份，已有处理人的告警不能认领；关联 Case 的告警由 Case 管理处理人。
+
 ### 错误追踪 (Issue)
 
 ```bash
@@ -162,7 +176,9 @@ octo-cli issues search --status unresolved -l 1h         # 未解决的 Issue
 octo-cli issues detail <issueId>                          # Issue 详情
 octo-cli issues ai-analysis <issueId> \
   --context "发布后开始报错"                              # 启动 AI 分析并返回 sessionId
-octo-cli issues assign --user 123 --ids id1,id2          # 分配 Issue
+octo-cli issues assign --user-id 123 --ids id1,id2        # 按用户 ID 批量分配（--user 仍可用）
+octo-cli issues assign --ldap alice --ids id1,id2 --source rum  # 按 LDAP 分配 RUM Issue
+octo-cli issues unassign <issueId> --source log           # 取消单个 Issue 的分配
 octo-cli issues update --ids id1,id2 -s resolved          # 解决 Issue
 octo-cli issues merge --ids id1,id2                       # 合并 Issue，返回 mergeIssueId
 octo-cli issues merge-children <issueId>                  # 查询 children 或 canonical parent
@@ -189,6 +205,50 @@ octo-cli issues update --ids id1,id2 -s unresolved       # 取消忽略
 ```
 
 `issues ai-analysis` 返回的 `sessionId` 仅用于关联分析任务。OpenAPI 没有查询分析状态或结果的接口，REST 会话查询接口需要 SSO，不能使用 OpenAPI token；分析结果最终通过企微通知。任务运行期间可安全重试，后端会通过 `running_key` 幂等保护避免重复执行。
+
+`issues assign` 至少提供用户 ID（`--user-id`，兼容旧 `--user`）或 `--ldap`；`--user-id` 优先于 `--user`，ID 优先于 LDAP。`--ids` 传一个 ID 即分配单个 Issue。`issues unassign` 每次取消一个 Issue 的分配；两者的 `--source` 均为 `log|rum`，默认 `log`。取消分配要求 PAT 对应有效用户，后端还会验证 Issue 的数据源与合并状态；已合并 child 不能直接修改处理人。
+
+### 错误追踪聚合规则
+
+```bash
+octo-cli issues aggregation-rules list --source log
+octo-cli issues aggregation-rules create --source log --file step.json
+octo-cli issues aggregation-rules create --source log --file process.json --parent-id 100
+octo-cli issues aggregation-rules update 101 --source log --file process.json
+octo-cli issues aggregation-rules disable 101 --source log
+octo-cli issues aggregation-rules enable 101 --source log
+octo-cli issues aggregation-rules duplicate 100 --source log
+octo-cli issues aggregation-rules move 101 --source log --parent-id 200 --previous-id 201
+octo-cli issues aggregation-rules delete 101 --source log
+```
+
+所有聚合规则命令必须显式指定 `--source log|rum`。`list` 返回有序的 `pipelineElementVOS` 树，后续操作使用其中的节点 ID。`create` / `update` 的文件是单个节点的可编辑内容，不包含 `issuePipelineElement` 外壳。步骤文件 `step.json`：
+
+```json
+{
+  "pipelineType": "pipeline",
+  "issuePipeline": {"name": "支付服务", "filter": "service = payment"}
+}
+```
+
+规则文件 `process.json`：
+
+```json
+{
+  "pipelineType": "process",
+  "issuePipelineProcess": {
+    "name": "运行时错误",
+    "type": 0,
+    "rule": "error.type:RuntimeException -> runtime-error"
+  }
+}
+```
+
+- `pipelineType=pipeline` 是步骤，`process` 是规则，两类配置互斥。规则类型 `0/1/2` 分别为 Fingerprint、错误栈预处理、栈帧深度；RUM 仅支持 `0`。DSL 原文提交给后端校验。
+- 步骤最多两层，规则必须有父步骤。`--parent-id` 省略或为 `0` 表示顶层步骤；`--previous-id` 省略表示置于目标同级列表最前，提供时必须是目标父节点下的同级节点 ID。
+- 更新完整替换节点可编辑内容，保持种类、位置和状态；步骤 `filter` 省略或 null 会清空筛选。`id/status/children/author/updateTime` 是输出字段；子树需逐个节点创建。
+- `duplicate` 只复制步骤及后代，副本紧随源步骤；成功后重新查询树获取新 ID。`delete` 删除单个规则或空步骤，非空步骤需先删除子节点。
+- 聚合规则写入要求 PAT 对应有效用户，且该用户 LDAP 满足后端 `issue-pipeline-white-list` 编辑权限；查询不要求编辑白名单。保存成功不代表采集或聚合运行实例已加载配置，实际生效仍需检查运行时。
 
 ### Case
 
@@ -251,12 +311,15 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `alerts search` / `alerts rules` | 搜索告警 / 搜索告警规则 |
 | `alerts detail` / `alerts timeseries` | 告警详情 / 检测时序数据 |
 | `alerts groups` / `alerts rule-details` | 查询告警组 / 批量查询告警规则详情 |
-| `alerts create` / `alerts delete` | 从 JSON 创建 / 删除告警规则 |
+| `alerts create` / `alerts update` / `alerts delete` | 创建 / 完整更新 / 删除告警规则 |
+| `alerts close` / `alerts assign` / `alerts unassign` / `alerts claim` | 手动关闭 / 指派 / 取消指派 / 认领告警 |
 | `alerts silence` / `alerts unsilence` | 创建 / 解除告警静默（抑制单条告警通知） |
 | `alerts disable` / `alerts disables` / `alerts enable` | 停用规则 / 查看停用记录 / 删除停用记录 |
 | `issues search` / `issues detail` | 搜索 Issue / Issue 详情 |
 | `issues ai-analysis` | 启动日志 Issue AI 分析；结果通过企微通知，sessionId 仅用于关联；不支持 RUM Issue |
-| `issues assign` / `issues update` | 批量分配 / 批量更新 Issue 状态 |
+| `issues assign` / `issues unassign` / `issues update` | 按用户 ID 或 LDAP 分配 / 取消单个分配 / 批量更新状态 |
+| `issues aggregation-rules list/create/update/delete` | 查询聚合规则树 / 创建 / 完整更新 / 删除节点 |
+| `issues aggregation-rules enable/disable/duplicate/move` | 启停 / 复制步骤 / 移动或排序节点 |
 | `issues merge` / `issues unmerge` / `issues merge-children` | 合并 / 移出 child / 查询合并关系 |
 | `cases list` / `cases create` | 查询 / 创建 Case |
 | `cases detail` / `cases detail-key` | Case 详情 |
@@ -305,7 +368,7 @@ Agent 也是这么用的 —— 把输出 pipe 到 `jq` 做二次提取、pipe �
 
 ## MCP Server
 
-内置 stdio MCP Server，43 个工具，支持 Claude Code、Cursor 等 AI Agent 直接调用。
+内置 stdio MCP Server，支持 Claude Code、Cursor 等 AI Agent 直接查询和管理 Octopus 数据。
 
 ```bash
 # 前提：已执行 octo-cli login
@@ -337,13 +400,18 @@ npx octo-cli mcp-install
 | `octo_alerts_search` / `octo_alerts_rules_search` | 搜索告警 / 搜索告警规则 |
 | `octo_alerts_detail` / `octo_alerts_timeseries` | 告警详情 / 检测时序数据 |
 | `octo_alerts_groups_list` / `octo_alerts_rules_details_search` | 查询告警组 / 批量查询告警规则详情 |
-| `octo_alerts_rules_create` / `octo_alerts_rules_delete` | 创建 / 删除告警规则 |
+| `octo_alerts_rules_create` / `octo_alerts_rules_update` / `octo_alerts_rules_delete` | 创建 / 完整更新 / 删除告警规则 |
+| `octo_alerts_close` / `octo_alerts_assign` / `octo_alerts_assign_cancel` / `octo_alerts_claim` | 手动关闭 / 指派 / 取消指派 / 认领告警 |
 | `octo_alerts_silence_create` / `octo_alerts_silence_delete` | 创建 / 解除告警静默（抑制单条告警通知） |
 | `octo_alerts_rule_disable_create` | 停用告警规则（规则本身不再检测） |
 | `octo_alerts_rule_disable_list` / `octo_alerts_rule_disable_delete` | 查看 / 删除停用记录 |
 | `octo_issues_search` / `octo_issues_detail` | 搜索 Issue / Issue 详情 |
 | `octo_issues_ai_analysis` | 启动日志 Issue AI 分析；结果通过企微通知，sessionId 仅用于关联；不支持 RUM Issue |
-| `octo_issues_assign` / `octo_issues_update` | 批量分配 / 批量更新 Issue |
+| `octo_issues_assign` / `octo_issues_assign_cancel` / `octo_issues_update` | 按 ID 或 LDAP 批量分配 / 取消单个分配 / 批量更新状态 |
+| `octo_issues_aggregation_rules_list` / `octo_issues_aggregation_rules_create` | 查询聚合规则树 / 创建节点 |
+| `octo_issues_aggregation_rules_update` / `octo_issues_aggregation_rules_delete` | 完整更新 / 删除节点 |
+| `octo_issues_aggregation_rules_status` | 启用或停用节点（`enable` 布尔值） |
+| `octo_issues_aggregation_rules_duplicate` / `octo_issues_aggregation_rules_move` | 复制步骤及后代 / 移动或排序节点 |
 | `octo_issues_merge` / `octo_issues_unmerge` | 合并 Issue / 从 merge Issue 移出 child |
 | `octo_issues_merge_children` | 查询 merge children 或 frozen child 的 canonical parent |
 | `octo_cases_list` / `octo_cases_create` | 查询 / 创建 Case |
@@ -362,6 +430,8 @@ npx octo-cli mcp-install
 | `octo_users_search` | 用户搜索 |
 
 </details>
+
+MCP 写工具沿用上述 CLI 的完整更新、数据源和权限语义。`octo_alerts_rules_update` 接收 `ruleId` 与完整 `rule` 对象；告警指派接收 `assigneeUserId` / `assigneeLdap`，Issue 分配接收 `userId` / `assigneeLdap`，ID 优先。聚合工具的 `dataSource` 必填，创建和更新的节点放在 `issuePipelineElement`，位置字段为 `parentElementId` / `previousElementId`。写入错误原样报告，不自动重试；成功后可通过详情或列表工具核对当前状态。
 
 ## 配套 Skill
 
@@ -411,8 +481,9 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 | 领域 | 接口 |
 |------|------|
 | 日志 | `/v1/logs/search`、`/v1/logs/aggregate` |
-| 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules/groups`、`/v1/alert/rules/details/search`、`/v1/alert/rules`、`/v1/alerts/silences/*` |
-| Issue | `/v1/log-error-tracking/issues/*`（含 ai-analysis / merge / unmerge / merge-children） |
+| 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules/groups`、`/v1/alert/rules/details/search`、`/v1/alert/rules`、`/v1/alert/rules/{ruleId}`、`/v1/alerts/{alertId}/{close,assign,assign/cancel,claim}`、`/v1/alerts/silences/*` |
+| Issue | `/v1/log-error-tracking/issues/*`（含 batch-assign / assign / ai-analysis / merge / unmerge / merge-children） |
+| 错误追踪聚合规则 | `/v1/error-tracking/process/pipelines`、`/{id}`、`/{id}/status`、`/duplicate`、`/move` |
 | Case | `/v1/cases/*`、`/v1/cases/groups/*` |
 | 巡检 | `/v1/inspection/reports/search` |
 | 链路 | `/v1/trace/span/list`、`/v1/trace/aggregate` |

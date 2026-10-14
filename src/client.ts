@@ -1,3 +1,4 @@
+import { parsePositiveInteger } from './aggregate.js';
 import { getExtraHeaders } from './config.js';
 
 declare const __PKG_VERSION__: string;
@@ -96,6 +97,124 @@ function normalizeIssueId(issueId: string, fieldName: string): string {
   const normalized = String(issueId ?? '').trim();
   if (!normalized) throw new Error(`${fieldName} must not be blank`);
   return normalized;
+}
+
+/** Editable content of one error-tracking aggregation step or rule. */
+export type IssueAggregationRuleElement =
+  | {
+      pipelineType: 'pipeline';
+      issuePipeline: { name: string; filter?: string | null };
+      issuePipelineProcess?: null;
+    }
+  | {
+      pipelineType: 'process';
+      issuePipelineProcess: { name: string; type: 0 | 1 | 2; rule: string };
+      issuePipeline?: null;
+    };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function aggregationRulesPath(dataSource: string): string {
+  if (dataSource !== 'log' && dataSource !== 'rum') {
+    throw new Error(
+      'Aggregation rule dataSource is required and must be log or rum'
+    );
+  }
+  return `/infra-octopus-openapi/v1/error-tracking/process/pipelines?dataSource=${dataSource}`;
+}
+
+function aggregationNodePath(
+  id: number,
+  dataSource: string,
+  action = ''
+): string {
+  const [path, query] = aggregationRulesPath(dataSource).split('?');
+  return `${path}/${parsePositiveInteger(id, 'Node ID')}${action}?${query}`;
+}
+
+function normalizeAggregationElement(
+  element: unknown,
+  dataSource: string
+): IssueAggregationRuleElement {
+  if (!isRecord(element)) {
+    throw new Error('issuePipelineElement must be a step or rule object');
+  }
+  const kind = element.pipelineType;
+  const config =
+    kind === 'pipeline' ? element.issuePipeline : element.issuePipelineProcess;
+  if (
+    (kind !== 'pipeline' && kind !== 'process') ||
+    !isRecord(config) ||
+    (kind === 'pipeline' && element.issuePipelineProcess != null) ||
+    (kind === 'process' && element.issuePipeline != null)
+  ) {
+    throw new Error(
+      'pipelineType must be pipeline or process with only its matching configuration'
+    );
+  }
+  if (
+    typeof config.name !== 'string' ||
+    !config.name.trim() ||
+    config.name.length > 100
+  ) {
+    throw new Error(
+      'Aggregation node name must be nonblank and at most 100 characters'
+    );
+  }
+  if (kind === 'pipeline') {
+    if (
+      config.filter != null &&
+      (typeof config.filter !== 'string' || config.filter.length > 2048)
+    ) {
+      throw new Error(
+        'Aggregation step filter must be a string of at most 2048 characters'
+      );
+    }
+    return {
+      pipelineType: kind,
+      issuePipeline: {
+        name: config.name,
+        filter: config.filter as string | null | undefined,
+      },
+    };
+  }
+  if (
+    (config.type !== 0 && config.type !== 1 && config.type !== 2) ||
+    typeof config.rule !== 'string'
+  ) {
+    throw new Error(
+      'Aggregation rule requires numeric type 0, 1, or 2 and rule text'
+    );
+  }
+  if (dataSource === 'rum' && config.type !== 0) {
+    throw new Error('RUM supports only fingerprint rules (type 0)');
+  }
+  return {
+    pipelineType: kind,
+    issuePipelineProcess: {
+      name: config.name,
+      type: config.type,
+      rule: config.rule,
+    },
+  };
+}
+
+function aggregationPosition(
+  parentElementId?: number | null,
+  previousElementId?: number | null
+) {
+  return {
+    parentElementId:
+      parentElementId == null || parentElementId === 0
+        ? (parentElementId ?? null)
+        : parsePositiveInteger(parentElementId, 'parentElementId'),
+    previousElementId:
+      previousElementId == null
+        ? null
+        : parsePositiveInteger(previousElementId, 'previousElementId'),
+  };
 }
 
 export type EventSubscriptionStatus = 'DISABLED' | 'ENABLED';
@@ -378,6 +497,55 @@ export class OctoClient {
     return this.del('/infra-octopus-openapi/v1/alert/rules', ruleId);
   }
 
+  /** Complete PUT: callers must read rule details and submit the full edited configuration. */
+  async alertRuleUpdate(ruleId: number, rule: Record<string, unknown>) {
+    const id = parsePositiveInteger(ruleId, 'ruleId');
+    if (!isRecord(rule) || Object.keys(rule).length === 0) {
+      throw new Error('rule must be a non-empty complete rule configuration');
+    }
+    return this.put(`/infra-octopus-openapi/v1/alert/rules/${id}`, rule);
+  }
+
+  async alertClose(alertId: number) {
+    const id = parsePositiveInteger(alertId, 'alertId');
+    return this.put(`/infra-octopus-openapi/v1/alerts/${id}/close`, null);
+  }
+
+  async alertAssign(
+    alertId: number,
+    params: { assigneeUserId?: number; assigneeLdap?: string }
+  ) {
+    const id = parsePositiveInteger(alertId, 'alertId');
+    const assigneeUserId =
+      params.assigneeUserId == null
+        ? undefined
+        : parsePositiveInteger(params.assigneeUserId, 'assigneeUserId');
+    const assigneeLdap =
+      typeof params.assigneeLdap === 'string'
+        ? params.assigneeLdap.trim()
+        : undefined;
+    if (assigneeUserId === undefined && !assigneeLdap) {
+      throw new Error('assigneeUserId or assigneeLdap is required');
+    }
+    return this.put(`/infra-octopus-openapi/v1/alerts/${id}/assign`, {
+      assigneeUserId,
+      assigneeLdap: assigneeLdap || undefined,
+    });
+  }
+
+  async alertCancelAssignment(alertId: number) {
+    const id = parsePositiveInteger(alertId, 'alertId');
+    return this.put(
+      `/infra-octopus-openapi/v1/alerts/${id}/assign/cancel`,
+      null
+    );
+  }
+
+  async alertClaim(alertId: number) {
+    const id = parsePositiveInteger(alertId, 'alertId');
+    return this.post(`/infra-octopus-openapi/v1/alerts/${id}/claim`, null);
+  }
+
   /** `scope` is lowercase — uppercase `ALL` is rejected with "静默范围不能为空". */
   async alertSilenceCreate(params: {
     ruleId: number;
@@ -484,13 +652,40 @@ export class OctoClient {
   }
 
   async issuesBatchAssign(params: {
-    assigneeId: number;
-    dataSource: string;
+    assigneeId?: number;
+    assigneeLdap?: string;
+    dataSource?: string;
     issueIds: string[];
   }) {
+    const assigneeId =
+      params.assigneeId == null
+        ? undefined
+        : parsePositiveInteger(params.assigneeId, 'assigneeId');
+    const assigneeLdap =
+      typeof params.assigneeLdap === 'string'
+        ? params.assigneeLdap.trim()
+        : undefined;
+    if (assigneeId === undefined && !assigneeLdap) {
+      throw new Error('assigneeId or assigneeLdap is required');
+    }
     return this.post(
       '/infra-octopus-openapi/v1/log-error-tracking/issues/batch-assign',
-      params
+      {
+        ...(assigneeId === undefined ? { assigneeLdap } : { assigneeId }),
+        issueIds: normalizeIssueIds(
+          params.issueIds,
+          1,
+          'At least one Issue ID is required'
+        ),
+        dataSource: normalizeIssueDataSource(params.dataSource),
+      }
+    );
+  }
+
+  async issueCancelAssignment(issueId: string, dataSource?: string) {
+    const id = encodeURIComponent(normalizeIssueId(issueId, 'issueId'));
+    return this.del(
+      `/infra-octopus-openapi/v1/log-error-tracking/issues/${id}/assign?dataSource=${normalizeIssueDataSource(dataSource)}`
     );
   }
 
@@ -546,6 +741,91 @@ export class OctoClient {
     return this.get(
       `/infra-octopus-openapi/v1/log-error-tracking/issues/${encodeURIComponent(normalizedIssueId)}/merge-children?dataSource=${normalizedDataSource}`
     );
+  }
+
+  // --- Error tracking aggregation rule management ---
+
+  async issueAggregationRulesList(dataSource: string) {
+    return this.get(aggregationRulesPath(dataSource));
+  }
+
+  async issueAggregationRulesCreate(params: {
+    dataSource: string;
+    issuePipelineElement: IssueAggregationRuleElement;
+    parentElementId?: number | null;
+    previousElementId?: number | null;
+  }) {
+    const path = aggregationRulesPath(params.dataSource);
+    const element = normalizeAggregationElement(
+      params.issuePipelineElement,
+      params.dataSource
+    );
+    const position = aggregationPosition(
+      params.parentElementId,
+      params.previousElementId
+    );
+    if (element.pipelineType === 'process' && !position.parentElementId) {
+      throw new Error(
+        'An aggregation process rule requires a positive parentElementId'
+      );
+    }
+    return this.post(path, { issuePipelineElement: element, ...position });
+  }
+
+  async issueAggregationRulesUpdate(
+    id: number,
+    params: {
+      dataSource: string;
+      issuePipelineElement: IssueAggregationRuleElement;
+    }
+  ) {
+    const path = aggregationNodePath(id, params.dataSource);
+    return this.put(path, {
+      issuePipelineElement: normalizeAggregationElement(
+        params.issuePipelineElement,
+        params.dataSource
+      ),
+    });
+  }
+
+  async issueAggregationRulesDelete(id: number, dataSource: string) {
+    return this.del(aggregationNodePath(id, dataSource));
+  }
+
+  async issueAggregationRulesStatus(
+    id: number,
+    enable: boolean,
+    dataSource: string
+  ) {
+    const path = aggregationNodePath(id, dataSource, '/status');
+    if (typeof enable !== 'boolean')
+      throw new Error('enable must be a boolean');
+    return this.put(`${path}&enable=${enable}`, null);
+  }
+
+  async issueAggregationRulesDuplicate(sourceId: number, dataSource: string) {
+    const [path, query] = aggregationRulesPath(dataSource).split('?');
+    return this.post(`${path}/duplicate?${query}`, {
+      sourceId: parsePositiveInteger(sourceId, 'sourceId'),
+    });
+  }
+
+  async issueAggregationRulesMove(params: {
+    id: number;
+    dataSource: string;
+    parentElementId?: number | null;
+    previousElementId?: number | null;
+  }) {
+    const [path, query] = aggregationRulesPath(params.dataSource).split('?');
+    const id = parsePositiveInteger(params.id, 'Node ID');
+    const position = aggregationPosition(
+      params.parentElementId,
+      params.previousElementId
+    );
+    if (position.parentElementId === id || position.previousElementId === id) {
+      throw new Error('A node cannot be its own parent or previous element');
+    }
+    return this.post(`${path}/move?${query}`, { id, ...position });
   }
 
   // --- Cases ---

@@ -1,6 +1,6 @@
 ---
 name: octo
-description: Query Octopus observability platform — logs, alerts, traces, metrics, issues, cases, services, LLM, RUM, events. Triggers on "logs", "alerts", "traces", "metrics", "octopus", "observability", "error tracking", "cases", "RUM", "LLM observability"
+description: Query and manage the Octopus observability platform — logs, alerts, traces, metrics, issues, cases, services, LLM, RUM, events. Triggers on "logs", "alerts", "traces", "metrics", "octopus", "observability", "error tracking", "cases", "RUM", "LLM observability"
 version: 0.2.0
 author: kris
 tags:
@@ -16,9 +16,9 @@ argument-hint: "logs search -q 'level = ERROR' | alerts search -s firing | cases
 allowed-tools: Bash(*)
 ---
 
-# Octopus CLI — Query Observability Data
+# Octopus CLI — Query and Manage Observability Data
 
-CLI tool `octo-cli` for querying the Octopus observability platform (octopus.zhenguanyu.com). Covers logs, alerts, error tracking, cases, traces, metrics, services, LLM, RUM, and events.
+CLI tool `octo-cli` for querying the Octopus observability platform (octopus.zhenguanyu.com) and managing alert rules, alerts, Issue assignees, aggregation rules, and cases. Also covers traces, metrics, services, LLM, RUM, and events.
 
 ## Onboarding (first time in a project)
 
@@ -243,6 +243,16 @@ npx octo-cli alerts rules -e online -p P0,P1                   # filter by env/p
 npx octo-cli alerts groups                                     # all alert groups
 npx octo-cli alerts rule-details --ids 101,102                 # full details, up to 100 rule IDs
 
+# Full rule update: read current detail, edit the selected object, then submit
+npx octo-cli alerts update 101 --file full-rule.json
+
+# Alert actions
+npx octo-cli alerts close 12345
+npx octo-cli alerts assign 12345 --user-id 123
+npx octo-cli alerts assign 12345 --ldap alice
+npx octo-cli alerts unassign 12345
+npx octo-cli alerts claim 12345
+
 # Silence — mutes notifications for ONE firing alert (needs --alert-id)
 npx octo-cli alerts silence --rule-id 123 --alert-id 456 --duration 2h
 npx octo-cli alerts unsilence 123
@@ -252,6 +262,19 @@ npx octo-cli alerts disable --rule-id 123 --duration 2h --reason "maintenance"
 npx octo-cli alerts disables 123                               # list disable records
 npx octo-cli alerts enable 1001                                # delete by DISABLE id, not rule id
 ```
+
+`alerts update` sends a full PUT. Read `alerts rule-details --ids <ruleId>` first,
+select the rule object from the returned array, and retain its complete editable
+configuration in the input file. It is not an array or a partial patch. Keep IDs
+on existing conditions; omit IDs on new conditions. Old conditions omitted from
+`conditions` are deleted. Rule type cannot change. Omitted or null `extInfo` and
+`alertAnalysisMetadata` retain the previous values. `closeAlert` defaults to false;
+true also closes firing alerts from the old rule version. There is no version
+conflict check, so refresh the detail before submitting changes.
+
+Alert assignment accepts a positive `--user-id` or nonblank `--ldap`; ID wins when
+both are provided. Claim uses the current PAT user and rejects already assigned
+alerts. Alerts linked to a Case have their assignees managed through that Case.
 
 ### Error Tracking (Issues)
 
@@ -270,12 +293,79 @@ npx octo-cli issues detail <issueId>
 npx octo-cli issues ai-analysis <issueId> --context "发布后开始报错"
 
 # Manage
-npx octo-cli issues assign --user 123 --ids id1,id2
+npx octo-cli issues assign --user-id 123 --ids id1,id2      # --user remains supported
+npx octo-cli issues assign --ldap alice --ids id1,id2 --source rum
+npx octo-cli issues unassign <issueId> --source log
 npx octo-cli issues update --ids id1,id2 -s resolved
 npx octo-cli issues merge --ids id1,id2
 npx octo-cli issues merge-children <issueId>
 npx octo-cli issues unmerge <mergeIssueId> --ids child1
 ```
+
+Issue assignment accepts `--user-id` (or legacy `--user`) or `--ldap`; `--user-id`
+wins over `--user`, and an ID wins over LDAP. A one-item `--ids` list assigns one
+Issue. Unassign handles one Issue per call. Both commands accept `--source log|rum`
+with default `log`. Unassign requires a PAT linked to a valid user and rejects a
+merged child or an Issue outside the chosen data source.
+
+### Error Tracking Aggregation Rules
+
+```bash
+npx octo-cli issues aggregation-rules list --source log
+npx octo-cli issues aggregation-rules create --source log --file step.json
+npx octo-cli issues aggregation-rules create --source log --file rule.json --parent-id 100
+npx octo-cli issues aggregation-rules update 101 --source log --file rule.json
+npx octo-cli issues aggregation-rules disable 101 --source log
+npx octo-cli issues aggregation-rules enable 101 --source log
+npx octo-cli issues aggregation-rules duplicate 100 --source log
+npx octo-cli issues aggregation-rules move 101 --source log --parent-id 200 --previous-id 201
+npx octo-cli issues aggregation-rules delete 101 --source log
+```
+
+Every aggregation command requires explicit `--source log|rum`. Read the ordered
+`pipelineElementVOS` tree to obtain IDs. Create/update files contain one editable
+node without an `issuePipelineElement` wrapper:
+
+```json
+{"pipelineType":"pipeline","issuePipeline":{"name":"payments","filter":"service = payment"}}
+```
+
+```json
+{"pipelineType":"process","issuePipelineProcess":{"name":"runtime errors","type":0,"rule":"error.type:RuntimeException -> runtime-error"}}
+```
+
+- A node contains exactly one of `issuePipeline` or `issuePipelineProcess`.
+  Rule types are numeric: 0 fingerprint, 1 stack trace preprocessing, 2 stack
+  depth. RUM supports only 0; preserve the rule DSL text.
+- Rules require a parent step; steps support at most two levels. Omit `--parent-id`
+  or use 0 for a top-level step. Omit `--previous-id` to insert first; otherwise it
+  must identify a sibling under the target parent.
+- Update replaces editable content while preserving kind, position and status.
+  An omitted or null step filter clears it. ID, status, children, author and update
+  time are output fields; create child nodes individually.
+- Duplicate copies a step and its descendants immediately after the source; read
+  the tree again to discover new IDs. Delete is non-recursive and rejects nonempty
+  steps, so delete child rules/steps first.
+- Writes require a valid PAT user whose LDAP satisfies the backend
+  `issue-pipeline-white-list`. Reading does not require this editing whitelist.
+  Saved configuration alone does not prove runtime adoption.
+
+MCP counterparts:
+
+- Rule updates: `octo_alerts_rules_update`.
+- Alert actions: `octo_alerts_close`, `octo_alerts_assign`,
+  `octo_alerts_assign_cancel`, `octo_alerts_claim`.
+- Issue assignees: `octo_issues_assign`, `octo_issues_assign_cancel`.
+- Aggregation: `octo_issues_aggregation_rules_list`,
+  `octo_issues_aggregation_rules_create`, `octo_issues_aggregation_rules_update`,
+  `octo_issues_aggregation_rules_delete`, `octo_issues_aggregation_rules_status`,
+  `octo_issues_aggregation_rules_duplicate`, `octo_issues_aggregation_rules_move`.
+
+Aggregation `dataSource` is required; create/update take `issuePipelineElement`,
+while positions use `parentElementId` / `previousElementId`. `status` requires
+boolean `enable`.
+Writes use the configured PAT and do not retry automatically. Verify the resulting
+state with the relevant detail/tree query after a successful write.
 
 ### Cases
 
