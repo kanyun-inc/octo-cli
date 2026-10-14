@@ -8,6 +8,7 @@ import {
   type EventSubscriptionUpdateParams,
   type EventWebhookParams,
   type EventWebhookRequestFormat,
+  type IssueAggregationRuleElement,
   normalizeAlertScope,
   OctoClient,
 } from './client.js';
@@ -217,6 +218,24 @@ function parseIssueSource(value: string): 'log' | 'rum' {
     return value;
   }
   throw new Error('--source must be one of: log, rum');
+}
+
+function parseAggregationPosition(opts: {
+  parentId?: string;
+  previousId?: string;
+}): { parentElementId?: number; previousElementId?: number } {
+  return {
+    parentElementId:
+      opts.parentId === undefined
+        ? undefined
+        : opts.parentId === '0'
+          ? 0
+          : parsePositiveInteger(opts.parentId, '--parent-id'),
+    previousElementId:
+      opts.previousId === undefined
+        ? undefined
+        : parsePositiveInteger(opts.previousId, '--previous-id'),
+  };
 }
 
 function parseIgnoreType(
@@ -630,6 +649,79 @@ export function registerCommands(program: Command): void {
     });
 
   alerts
+    .command('update')
+    .description('Completely update an alert rule from its full configuration')
+    .argument('<ruleId>', 'Alert rule ID')
+    .requiredOption('--file <path>', 'Full rule JSON file, or - for stdin')
+    .addHelpText(
+      'after',
+      '\nRead alerts rule-details first, edit the full configuration, then submit it.\nThe conditions array replaces all conditions; omitted old conditions are deleted.\nOptional closeAlert in the file also closes alerts from the previous rule version.'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (ruleId, opts) => {
+      const id = parsePositiveInteger(ruleId, 'ruleId');
+      const rule = readJsonObject<Record<string, unknown>>(opts.file);
+      const data = await getClient().alertRuleUpdate(id, rule);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('close')
+    .description('Manually close a fired alert and send close notifications')
+    .argument('<alertId>', 'Fired alert ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (alertId, opts) => {
+      const id = parsePositiveInteger(alertId, 'alertId');
+      const data = await getClient().alertClose(id);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('assign')
+    .description('Assign a fired alert to a user ID or LDAP account')
+    .argument('<alertId>', 'Fired alert ID')
+    .option(
+      '--user-id <id>',
+      'Positive assignee user ID; takes precedence over LDAP'
+    )
+    .option('--ldap <ldap>', 'Assignee LDAP; required without --user-id')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (alertId, opts) => {
+      const id = parsePositiveInteger(alertId, 'alertId');
+      const assigneeUserId =
+        opts.userId === undefined
+          ? undefined
+          : parsePositiveInteger(opts.userId, '--user-id');
+      const data = await getClient().alertAssign(id, {
+        assigneeUserId,
+        assigneeLdap: opts.ldap,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('unassign')
+    .description('Cancel the assignee of a fired alert')
+    .argument('<alertId>', 'Fired alert ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (alertId, opts) => {
+      const id = parsePositiveInteger(alertId, 'alertId');
+      const data = await getClient().alertCancelAssignment(id);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
+    .command('claim')
+    .description('Claim an unassigned fired alert for the current PAT user')
+    .argument('<alertId>', 'Fired alert ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (alertId, opts) => {
+      const id = parsePositiveInteger(alertId, 'alertId');
+      const data = await getClient().alertClaim(id);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
     .command('delete')
     .description('Delete an alert rule')
     .argument('<ruleId>', 'Alert rule ID')
@@ -804,18 +896,53 @@ export function registerCommands(program: Command): void {
 
   issues
     .command('assign')
-    .description('Batch assign issues to a user')
-    .requiredOption('--user <userId>', 'Assignee user ID')
+    .description('Batch assign issues to a user ID or LDAP account')
+    .option(
+      '--user-id <id>',
+      'Positive assignee user ID; takes precedence over --user and LDAP'
+    )
+    .option('--user <userId>', 'Alias for --user-id')
+    .option('--ldap <ldap>', 'Assignee LDAP; required without a user ID')
     .requiredOption('--ids <ids>', 'Comma-separated issue IDs')
-    .option('--source <src>', 'Data source: log or rum', 'log')
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
     .action(async (opts) => {
+      const userId = opts.userId ?? opts.user;
+      const assigneeId =
+        userId === undefined
+          ? undefined
+          : parsePositiveInteger(userId, '--user-id');
       const client = getClient();
       await client.issuesBatchAssign({
-        assigneeId: Number.parseInt(opts.user, 10),
+        assigneeId,
+        assigneeLdap: opts.ldap,
         dataSource: opts.source,
         issueIds: opts.ids.split(','),
       });
       console.log('Issues assigned');
+    });
+
+  issues
+    .command('unassign')
+    .description('Cancel the assignee of one Issue')
+    .argument('<issueId>', 'Issue ID')
+    .option(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource,
+      'log'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (issueId, opts) => {
+      const data = await getClient().issueCancelAssignment(
+        issueId,
+        opts.source
+      );
+      printOutput(data, opts.output as OutputFormat);
     });
 
   issues
@@ -929,6 +1056,175 @@ export function registerCommands(program: Command): void {
     .action(async (issueId, opts) => {
       const client = getClient();
       const data = await client.issueMergeChildren(issueId, opts.source);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  const aggregationRules = issues
+    .command('aggregation-rules')
+    .description('Manage error-tracking aggregation steps and rules');
+
+  aggregationRules
+    .command('list')
+    .description('Read the ordered aggregation rule tree and node IDs')
+    .requiredOption(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const data = await getClient().issueAggregationRulesList(opts.source);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  aggregationRules
+    .command('create')
+    .description(
+      'Create an enabled aggregation step or rule from a node JSON object'
+    )
+    .requiredOption(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource
+    )
+    .requiredOption('--file <path>', 'Node JSON file, or - for stdin')
+    .option(
+      '--parent-id <id>',
+      'Parent step ID; 0 or omitted for a top-level step'
+    )
+    .option('--previous-id <id>', 'Previous sibling ID; omitted inserts first')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (opts) => {
+      const issuePipelineElement = readJsonObject<IssueAggregationRuleElement>(
+        opts.file
+      );
+      const position = parseAggregationPosition(opts);
+      const data = await getClient().issueAggregationRulesCreate({
+        dataSource: opts.source,
+        issuePipelineElement,
+        ...position,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  aggregationRules
+    .command('update')
+    .description(
+      'Replace an aggregation node configuration, preserving position and status'
+    )
+    .argument('<id>', 'Aggregation node ID')
+    .requiredOption(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource
+    )
+    .requiredOption(
+      '--file <path>',
+      'Complete editable node JSON file, or - for stdin'
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const nodeId = parsePositiveInteger(id, 'id');
+      const issuePipelineElement = readJsonObject<IssueAggregationRuleElement>(
+        opts.file
+      );
+      const data = await getClient().issueAggregationRulesUpdate(nodeId, {
+        dataSource: opts.source,
+        issuePipelineElement,
+      });
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  aggregationRules
+    .command('delete')
+    .description('Delete one aggregation rule or an empty step')
+    .argument('<id>', 'Aggregation node ID')
+    .requiredOption(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const nodeId = parsePositiveInteger(id, 'id');
+      const data = await getClient().issueAggregationRulesDelete(
+        nodeId,
+        opts.source
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  for (const [command, enable] of [
+    ['enable', true],
+    ['disable', false],
+  ] as const) {
+    aggregationRules
+      .command(command)
+      .description(
+        `${enable ? 'Enable' : 'Disable'} an aggregation step or rule`
+      )
+      .argument('<id>', 'Aggregation node ID')
+      .requiredOption(
+        '--source <src>',
+        'Data source: log or rum',
+        parseIssueSource
+      )
+      .option('-o, --output <fmt>', 'Output format', 'json')
+      .action(async (id, opts) => {
+        const nodeId = parsePositiveInteger(id, 'id');
+        const data = await getClient().issueAggregationRulesStatus(
+          nodeId,
+          enable,
+          opts.source
+        );
+        printOutput(data, opts.output as OutputFormat);
+      });
+  }
+
+  aggregationRules
+    .command('duplicate')
+    .description(
+      'Copy an aggregation step and its descendants after the source'
+    )
+    .argument('<sourceId>', 'Source step ID')
+    .requiredOption(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource
+    )
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (sourceId, opts) => {
+      const id = parsePositiveInteger(sourceId, 'sourceId');
+      const data = await getClient().issueAggregationRulesDuplicate(
+        id,
+        opts.source
+      );
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  aggregationRules
+    .command('move')
+    .description('Move or reorder an aggregation step or rule')
+    .argument('<id>', 'Aggregation node ID')
+    .requiredOption(
+      '--source <src>',
+      'Data source: log or rum',
+      parseIssueSource
+    )
+    .option(
+      '--parent-id <id>',
+      'Target parent step ID; 0 or omitted for a top-level step'
+    )
+    .option('--previous-id <id>', 'Previous sibling ID; omitted inserts first')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (id, opts) => {
+      const nodeId = parsePositiveInteger(id, 'id');
+      const position = parseAggregationPosition(opts);
+      const data = await getClient().issueAggregationRulesMove({
+        id: nodeId,
+        dataSource: opts.source,
+        ...position,
+      });
       printOutput(data, opts.output as OutputFormat);
     });
 

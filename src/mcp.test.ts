@@ -82,6 +82,480 @@ describe('MCP tools', () => {
     expect(issueAiAnalysis?.description).toContain('Safe to retry');
   });
 
+  describe('OpenAPI management tools', () => {
+    const step = {
+      pipelineType: 'pipeline',
+      issuePipeline: { name: 'checkout errors', filter: 'service = checkout' },
+    };
+    const rule = {
+      pipelineType: 'process',
+      issuePipelineProcess: {
+        name: 'fingerprint',
+        type: 0,
+        rule: 'error.type:RuntimeException -> runtime-error',
+      },
+    };
+    const alertRule = {
+      id: 12,
+      version: 3,
+      name: 'latency updated',
+      env: 'online',
+      groupId: 3,
+      ruleType: 'metric',
+      priority: 'P1',
+      conditionEvaluationType: 'single',
+      conditions: [{ id: 101, threshold: 200 }],
+      notice: { receivers: ['alice'], repeatNoticeInterval: 600000 },
+      closeAlert: true,
+      extInfo: { dashboard: 'checkout' },
+      wechatworkMentionIds: { '9': [8] },
+    };
+    const pipelinePath = '/error-tracking/process/pipelines';
+    const issuePath = '/log-error-tracking/issues';
+    type Scenario = {
+      name: string;
+      args: Record<string, unknown>;
+      method: string;
+      path: string;
+      body?: unknown;
+      data?: unknown;
+      message?: string;
+    };
+    const scenarios: Scenario[] = [
+      {
+        name: 'octo_alerts_rules_update',
+        args: { ruleId: 12, rule: alertRule },
+        method: 'PUT',
+        path: '/alert/rules/12',
+        body: alertRule,
+        data: { id: 12, version: 4, name: 'latency updated' },
+      },
+      {
+        name: 'octo_alerts_close',
+        args: { alertId: 34 },
+        method: 'PUT',
+        path: '/alerts/34/close',
+        message: 'Alert 34 closed',
+      },
+      {
+        name: 'octo_alerts_assign',
+        args: { alertId: 34, assigneeUserId: 8, assigneeLdap: ' alice ' },
+        method: 'PUT',
+        path: '/alerts/34/assign',
+        body: { assigneeUserId: 8, assigneeLdap: 'alice' },
+        message: 'Alert 34 assigned',
+      },
+      {
+        name: 'octo_alerts_assign',
+        args: { alertId: 34, assigneeLdap: ' alice ' },
+        method: 'PUT',
+        path: '/alerts/34/assign',
+        body: { assigneeLdap: 'alice' },
+        message: 'Alert 34 assigned',
+      },
+      {
+        name: 'octo_alerts_assign_cancel',
+        args: { alertId: 34 },
+        method: 'PUT',
+        path: '/alerts/34/assign/cancel',
+        message: 'Assignment cancelled for alert 34',
+      },
+      {
+        name: 'octo_alerts_claim',
+        args: { alertId: 34 },
+        method: 'POST',
+        path: '/alerts/34/claim',
+        message: 'Alert 34 claimed',
+      },
+      {
+        name: 'octo_issues_assign',
+        args: {
+          userId: 8,
+          assigneeLdap: 'ignored',
+          issueIds: [' a ', 'b', 'a'],
+        },
+        method: 'POST',
+        path: `${issuePath}/batch-assign`,
+        body: { assigneeId: 8, issueIds: ['a', 'b'], dataSource: 'log' },
+        message: 'Issues assigned',
+      },
+      {
+        name: 'octo_issues_assign',
+        args: {
+          assigneeLdap: ' alice ',
+          issueIds: ['rum-issue'],
+          dataSource: 'rum',
+        },
+        method: 'POST',
+        path: `${issuePath}/batch-assign`,
+        body: {
+          assigneeLdap: 'alice',
+          issueIds: ['rum-issue'],
+          dataSource: 'rum',
+        },
+        message: 'Issues assigned',
+      },
+      {
+        name: 'octo_issues_assign_cancel',
+        args: { issueId: ' issue id/1 ', dataSource: 'rum' },
+        method: 'DELETE',
+        path: `${issuePath}/issue%20id%2F1/assign?dataSource=rum`,
+        message: 'Assignment cancelled for Issue issue id/1',
+      },
+      {
+        name: 'octo_issues_assign_cancel',
+        args: { issueId: 'a' },
+        method: 'DELETE',
+        path: `${issuePath}/a/assign?dataSource=log`,
+        message: 'Assignment cancelled for Issue a',
+      },
+      {
+        name: 'octo_issues_aggregation_rules_list',
+        args: { dataSource: 'log' },
+        method: 'GET',
+        path: `${pipelinePath}?dataSource=log`,
+        data: {
+          pipelineElementVOS: [
+            {
+              id: 10,
+              status: 1,
+              ...step,
+              children: [{ id: 12, status: 2, ...rule }],
+            },
+          ],
+        },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_create',
+        args: { dataSource: 'log', issuePipelineElement: step },
+        method: 'POST',
+        path: `${pipelinePath}?dataSource=log`,
+        body: {
+          issuePipelineElement: step,
+          parentElementId: null,
+          previousElementId: null,
+        },
+        data: { id: 10, status: 1, ...step },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_create',
+        args: {
+          dataSource: 'rum',
+          issuePipelineElement: rule,
+          parentElementId: 10,
+          previousElementId: 11,
+        },
+        method: 'POST',
+        path: `${pipelinePath}?dataSource=rum`,
+        body: {
+          issuePipelineElement: rule,
+          parentElementId: 10,
+          previousElementId: 11,
+        },
+        data: { id: 12, status: 1, ...rule },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_update',
+        args: { dataSource: 'rum', id: 12, issuePipelineElement: rule },
+        method: 'PUT',
+        path: `${pipelinePath}/12?dataSource=rum`,
+        body: { issuePipelineElement: rule },
+        message: 'Aggregation node 12 updated',
+      },
+      {
+        name: 'octo_issues_aggregation_rules_delete',
+        args: { dataSource: 'log', id: 12 },
+        method: 'DELETE',
+        path: `${pipelinePath}/12?dataSource=log`,
+        message: 'Aggregation node 12 deleted',
+      },
+      {
+        name: 'octo_issues_aggregation_rules_status',
+        args: { dataSource: 'log', id: 12, enable: false },
+        method: 'PUT',
+        path: `${pipelinePath}/12/status?dataSource=log&enable=false`,
+        message: 'Aggregation node 12 disabled',
+      },
+      {
+        name: 'octo_issues_aggregation_rules_duplicate',
+        args: { dataSource: 'rum', sourceId: 10 },
+        method: 'POST',
+        path: `${pipelinePath}/duplicate?dataSource=rum`,
+        body: { sourceId: 10 },
+        message: 'Aggregation step 10 copied',
+      },
+      {
+        name: 'octo_issues_aggregation_rules_move',
+        args: {
+          dataSource: 'log',
+          id: 12,
+          parentElementId: 10,
+          previousElementId: 11,
+        },
+        method: 'POST',
+        path: `${pipelinePath}/move?dataSource=log`,
+        body: { id: 12, parentElementId: 10, previousElementId: 11 },
+        message: 'Aggregation node 12 moved',
+      },
+      {
+        name: 'octo_issues_aggregation_rules_move',
+        args: { dataSource: 'rum', id: 10, parentElementId: 0 },
+        method: 'POST',
+        path: `${pipelinePath}/move?dataSource=rum`,
+        body: { id: 10, parentElementId: 0, previousElementId: null },
+        message: 'Aggregation node 10 moved',
+      },
+    ];
+
+    it('publishes all thirteen management tools without duplicate or ambiguous aggregation names', () => {
+      const names = getMcpTools().map((tool) => tool.name);
+      expect(new Set(names).size).toBe(names.length);
+      const expected = [
+        'octo_alerts_rules_update',
+        'octo_alerts_close',
+        'octo_alerts_assign',
+        'octo_alerts_assign_cancel',
+        'octo_alerts_claim',
+        'octo_issues_assign_cancel',
+        ...[
+          'list',
+          'create',
+          'update',
+          'delete',
+          'status',
+          'duplicate',
+          'move',
+        ].map((action) => `octo_issues_aggregation_rules_${action}`),
+      ];
+      expect(expected).toHaveLength(13);
+      expect(names).toEqual(expect.arrayContaining(expected));
+      expect(
+        names
+          .filter((name) => name.startsWith('octo_issues_aggregation_'))
+          .sort()
+      ).toEqual(
+        expected
+          .filter((name) => name.startsWith('octo_issues_aggregation_rules_'))
+          .sort()
+      );
+      expect(new Set(scenarios.map((scenario) => scenario.name))).toEqual(
+        new Set([...expected, 'octo_issues_assign'])
+      );
+    });
+
+    it('publishes optional assignee alternatives and complete typed aggregation inputs', () => {
+      const tools = getMcpTools();
+      const issueAssign = tools.find(
+        (tool) => tool.name === 'octo_issues_assign'
+      );
+      expect(issueAssign?.inputSchema).toMatchObject({
+        properties: {
+          userId: { type: 'integer', minimum: 1 },
+          assigneeLdap: { type: 'string' },
+        },
+        required: ['issueIds'],
+        anyOf: [{ required: ['userId'] }, { required: ['assigneeLdap'] }],
+      });
+      expect(
+        tools.find((tool) => tool.name === 'octo_alerts_assign')?.inputSchema
+      ).toMatchObject({
+        required: ['alertId'],
+        anyOf: [
+          { required: ['assigneeUserId'] },
+          { required: ['assigneeLdap'] },
+        ],
+      });
+      expect(
+        tools.find((tool) => tool.name === 'octo_alerts_rules_update')
+          ?.inputSchema
+      ).toMatchObject({
+        properties: {
+          ruleId: { type: 'integer', minimum: 1 },
+          rule: { type: 'object', minProperties: 1 },
+        },
+        required: ['ruleId', 'rule'],
+      });
+      for (const tool of tools.filter((tool) =>
+        tool.name.startsWith('octo_issues_aggregation_rules_')
+      )) {
+        expect(tool.inputSchema.required).toContain('dataSource');
+        expect(tool.inputSchema.properties.dataSource).toMatchObject({
+          type: 'string',
+          enum: ['log', 'rum'],
+        });
+      }
+      for (const action of ['create', 'update']) {
+        const schema = tools.find(
+          (tool) => tool.name === `octo_issues_aggregation_rules_${action}`
+        )?.inputSchema;
+        expect(schema?.required).toContain('issuePipelineElement');
+        expect(schema?.properties.issuePipelineElement).toMatchObject({
+          type: 'object',
+          required: ['pipelineType'],
+          properties: {
+            pipelineType: { type: 'string', enum: ['pipeline', 'process'] },
+            issuePipeline: {
+              properties: {
+                name: { type: 'string' },
+                filter: { type: ['string', 'null'] },
+              },
+              required: ['name'],
+            },
+            issuePipelineProcess: {
+              properties: {
+                name: { type: 'string' },
+                type: { type: 'integer', enum: [0, 1, 2] },
+                rule: { type: 'string' },
+              },
+              required: ['name', 'type', 'rule'],
+            },
+          },
+          oneOf: [
+            {
+              properties: { pipelineType: { const: 'pipeline' } },
+              required: ['issuePipeline'],
+              not: { required: ['issuePipelineProcess'] },
+            },
+            {
+              properties: { pipelineType: { const: 'process' } },
+              required: ['issuePipelineProcess'],
+              not: { required: ['issuePipeline'] },
+            },
+          ],
+        });
+      }
+      expect(
+        tools.find(
+          (tool) => tool.name === 'octo_issues_aggregation_rules_status'
+        )?.inputSchema
+      ).toMatchObject({
+        properties: { enable: { type: 'boolean' } },
+        required: ['dataSource', 'id', 'enable'],
+      });
+    });
+
+    it.each(scenarios)(
+      'dispatches $name with its OpenAPI wire contract',
+      async (scenario) => {
+        const calls = captureFetch(scenario.data ?? null);
+        const result = await handleMcpTool(
+          scenario.name,
+          scenario.args,
+          testClient()
+        );
+        expect(result).not.toHaveProperty('isError', true);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe(
+          `https://example.com/infra-octopus-openapi/v1${scenario.path}`
+        );
+        expect(calls[0].method).toBe(scenario.method);
+        expect(calls[0].headers.Authorization).toBe('Bearer test-token');
+        if (scenario.body === undefined) expect(calls[0].body).toBe('');
+        else expect(JSON.parse(calls[0].body)).toEqual(scenario.body);
+        if (scenario.message)
+          expect(result.content[0].text).toBe(scenario.message);
+        else expect(JSON.parse(result.content[0].text)).toEqual(scenario.data);
+      }
+    );
+
+    it.each([
+      { name: 'octo_alerts_rules_update', args: { ruleId: 12, rule: {} } },
+      { name: 'octo_alerts_close', args: { alertId: 0 } },
+      { name: 'octo_alerts_assign', args: { alertId: 34, assigneeLdap: ' ' } },
+      { name: 'octo_alerts_assign_cancel', args: { alertId: -1 } },
+      { name: 'octo_alerts_claim', args: { alertId: 0 } },
+      { name: 'octo_issues_assign', args: { issueIds: ['a'] } },
+      { name: 'octo_issues_assign_cancel', args: { issueId: ' ' } },
+      { name: 'octo_issues_aggregation_rules_list', args: {} },
+      {
+        name: 'octo_issues_aggregation_rules_list',
+        args: { dataSource: 'trace' },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_create',
+        args: { dataSource: 'log', issuePipelineElement: rule },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_update',
+        args: {
+          dataSource: 'rum',
+          id: 12,
+          issuePipelineElement: {
+            ...rule,
+            issuePipelineProcess: { ...rule.issuePipelineProcess, type: 2 },
+          },
+        },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_update',
+        args: {
+          dataSource: 'log',
+          id: 12,
+          issuePipelineElement: {
+            ...step,
+            issuePipelineProcess: rule.issuePipelineProcess,
+          },
+        },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_delete',
+        args: { dataSource: 'log', id: 0 },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_status',
+        args: { dataSource: 'log', id: 12 },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_status',
+        args: { dataSource: 'log', id: 12, enable: 'false' },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_duplicate',
+        args: { dataSource: 'log', sourceId: -1 },
+      },
+      {
+        name: 'octo_issues_aggregation_rules_move',
+        args: { dataSource: 'log', id: 12, parentElementId: 12 },
+      },
+    ])('rejects invalid $name input before HTTP', async ({ name, args }) => {
+      const calls = captureFetch();
+      const result = await handleMcpTool(name, args, testClient());
+      expect(result).toHaveProperty('isError', true);
+      expect(result.content[0].text).toMatch(/^Error: /);
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each(
+      scenarios.filter(
+        (scenario, index) =>
+          scenarios.findIndex(
+            (candidate) => candidate.name === scenario.name
+          ) === index
+      )
+    )(
+      'reports the backend rejection for $name without retrying',
+      async (scenario) => {
+        const fetch = vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ code: -210, message: 'operation denied' })
+            )
+        );
+        vi.stubGlobal('fetch', fetch);
+        const result = await handleMcpTool(
+          scenario.name,
+          scenario.args,
+          testClient()
+        );
+        expect(result).toHaveProperty('isError', true);
+        expect(result.content[0].text).toContain(
+          'API error (code=-210): operation denied'
+        );
+        expect(fetch).toHaveBeenCalledTimes(1);
+      }
+    );
+  });
+
   it('dispatches issue detail, assign, and update tools', async () => {
     vi.stubEnv('OCTOPUS_ENV', 'default-env');
     const client = testClient();
