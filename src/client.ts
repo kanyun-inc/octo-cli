@@ -489,6 +489,11 @@ export class OctoClient {
     });
   }
 
+  async alertRuleHistory(ruleId: number) {
+    const id = parsePositiveInteger(ruleId, 'ruleId');
+    return this.get(`/infra-octopus-openapi/v1/alert/rules/${id}/history`);
+  }
+
   async alertRulesCreate(rules: unknown[]) {
     return this.post('/infra-octopus-openapi/v1/alert/rules', rules);
   }

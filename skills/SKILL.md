@@ -242,6 +242,7 @@ npx octo-cli alerts rules --search "error" --page 1 --page-size 10
 npx octo-cli alerts rules -e online -p P0,P1                   # filter by env/priority
 npx octo-cli alerts groups                                     # all alert groups
 npx octo-cli alerts rule-details --ids 101,102                 # full details, up to 100 rule IDs
+npx octo-cli alerts history 20278                             # operation records and full stored snapshots
 
 # Full rule update: read current detail, edit the selected object, then submit
 npx octo-cli alerts update 101 --file full-rule.json
@@ -262,6 +263,12 @@ npx octo-cli alerts disable --rule-id 123 --duration 2h --reason "maintenance"
 npx octo-cli alerts disables 123                               # list disable records
 npx octo-cli alerts enable 1001                                # delete by DISABLE id, not rule id
 ```
+
+`alerts history` returns the original record array with `id`, `alertRuleId`,
+`datetime`, `userVO`, `operationType`, `version` and full `snapshot`. Operation type
+plus version identifies the page's change description, e.g. `update` + `7` means
+“Update V7”. Version, snapshot or user information may be null. This read-only
+command does not compute field differences or restore a rule.
 
 `alerts update` sends a full PUT. Read `alerts rule-details --ids <ruleId>` first,
 select the rule object from the returned array, and retain its complete editable
@@ -352,6 +359,7 @@ node without an `issuePipelineElement` wrapper:
 
 MCP counterparts:
 
+- Rule history: `octo_alerts_rules_history` (`ruleId`, read-only).
 - Rule updates: `octo_alerts_rules_update`.
 - Alert actions: `octo_alerts_close`, `octo_alerts_assign`,
   `octo_alerts_assign_cancel`, `octo_alerts_claim`.

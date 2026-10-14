@@ -599,6 +599,17 @@ export function registerCommands(program: Command): void {
     });
 
   alerts
+    .command('history')
+    .description('Read alert rule operation records and their stored snapshots')
+    .argument('<ruleId>', 'Alert rule ID (positive integer)')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (ruleId, opts) => {
+      const id = parsePositiveInteger(ruleId, 'ruleId');
+      const data = await getClient().alertRuleHistory(id);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  alerts
     .command('silence')
     .description('Create alert silence')
     .requiredOption('--rule-id <id>', 'Alert rule ID')
