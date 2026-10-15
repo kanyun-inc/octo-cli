@@ -142,6 +142,7 @@ octo-cli alerts rules --group-id 123                      # 搜索告警规则
 octo-cli alerts rules -e online -p P0,P1                  # 按环境/优先级过滤规则
 octo-cli alerts groups                                    # 查询全部告警组
 octo-cli alerts rule-details --ids 101,102                # 批量查询规则详情（最多 100 个）
+octo-cli alerts history <ruleId>                          # 操作记录及各次历史快照
 octo-cli alerts create --file rule.json                   # 从 JSON 创建告警规则
 octo-cli alerts update <ruleId> --file full-rule.json      # 完整更新已有规则
 octo-cli alerts delete <ruleId>                           # 删除告警规则
@@ -162,6 +163,8 @@ octo-cli alerts disable --rule-id 1 --duration 2h --reason "节假日维护"
 octo-cli alerts disables <ruleId>                         # 查看该规则的停用记录
 octo-cli alerts enable <disableId>                        # 删除停用记录（传停用记录 id）
 ```
+
+`alerts history` 返回与页面操作记录一致的数组，每项包含 `id`、`alertRuleId`、`datetime`、`userVO`、`operationType`、`version` 和完整原始 `snapshot`。`operationType` 与 `version` 表示页面的变更详情，例如 `update` + `7` 对应“更新 V7”；启停记录可能没有版本和快照，用户信息也可能为空。该命令只读，不计算字段差异或恢复规则。
 
 `alerts update` 使用完整 PUT：先通过 `alerts rule-details --ids <ruleId>` 获取当前详情，从返回数组中取出目标规则对象，修改后保存为 `full-rule.json`，再提交更新。文件是单个规则对象，包含当前完整的条件、通知和其他可编辑配置；不是数组，也不是局部补丁。`conditions` 中保留的旧条件须带原 ID，新增条件不带 ID，未提交的旧条件会被删除。规则类型不能修改。
 
@@ -311,6 +314,7 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `alerts search` / `alerts rules` | 搜索告警 / 搜索告警规则 |
 | `alerts detail` / `alerts timeseries` | 告警详情 / 检测时序数据 |
 | `alerts groups` / `alerts rule-details` | 查询告警组 / 批量查询告警规则详情 |
+| `alerts history` | 告警规则操作记录及历史快照 |
 | `alerts create` / `alerts update` / `alerts delete` | 创建 / 完整更新 / 删除告警规则 |
 | `alerts close` / `alerts assign` / `alerts unassign` / `alerts claim` | 手动关闭 / 指派 / 取消指派 / 认领告警 |
 | `alerts silence` / `alerts unsilence` | 创建 / 解除告警静默（抑制单条告警通知） |
@@ -400,6 +404,7 @@ npx octo-cli mcp-install
 | `octo_alerts_search` / `octo_alerts_rules_search` | 搜索告警 / 搜索告警规则 |
 | `octo_alerts_detail` / `octo_alerts_timeseries` | 告警详情 / 检测时序数据 |
 | `octo_alerts_groups_list` / `octo_alerts_rules_details_search` | 查询告警组 / 批量查询告警规则详情 |
+| `octo_alerts_rules_history` | 告警规则操作记录及历史快照（只读，参数 `ruleId`） |
 | `octo_alerts_rules_create` / `octo_alerts_rules_update` / `octo_alerts_rules_delete` | 创建 / 完整更新 / 删除告警规则 |
 | `octo_alerts_close` / `octo_alerts_assign` / `octo_alerts_assign_cancel` / `octo_alerts_claim` | 手动关闭 / 指派 / 取消指派 / 认领告警 |
 | `octo_alerts_silence_create` / `octo_alerts_silence_delete` | 创建 / 解除告警静默（抑制单条告警通知） |
@@ -482,6 +487,7 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 |------|------|
 | 日志 | `/v1/logs/search`、`/v1/logs/aggregate` |
 | 告警 | `/v1/alerts/search`、`/v1/alert/rules/search`、`/v1/alert/rules/groups`、`/v1/alert/rules/details/search`、`/v1/alert/rules`、`/v1/alert/rules/{ruleId}`、`/v1/alerts/{alertId}/{close,assign,assign/cancel,claim}`、`/v1/alerts/silences/*` |
+| 告警规则历史 | `GET /v1/alert/rules/{ruleId}/history` |
 | Issue | `/v1/log-error-tracking/issues/*`（含 batch-assign / assign / ai-analysis / merge / unmerge / merge-children） |
 | 错误追踪聚合规则 | `/v1/error-tracking/process/pipelines`、`/{id}`、`/{id}/status`、`/duplicate`、`/move` |
 | Case | `/v1/cases/*`、`/v1/cases/groups/*` |

@@ -519,6 +519,19 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_alerts_rules_history',
+      description:
+        'Read alert rule operation records with time, userVO, operationType, version and complete historical snapshot. operationType and version identify the change shown on the page, such as update V7. Some operations have no version or snapshot. Returns the original record array without computing field differences or restoring a rule.',
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          ruleId: { type: 'integer', minimum: 1, description: 'Alert rule ID' },
+        },
+        required: ['ruleId'],
+      },
+    },
+    {
       name: 'octo_alerts_rules_create',
       description:
         'Create Octopus alert rules. Accepts an array of rule objects. ' +
@@ -1723,6 +1736,11 @@ export async function handleMcpTool(
         const data = await client.alertRuleDetailsSearch(
           args.ruleIds as number[]
         );
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_alerts_rules_history': {
+        const data = await client.alertRuleHistory(args.ruleId as number);
         return ok(JSON.stringify(data, null, 2));
       }
 
