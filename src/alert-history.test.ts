@@ -10,7 +10,7 @@ const history = [
     alertRuleId: 20278,
     datetime: 1791960000000,
     userVO: {
-      userId: 240,
+      id: 240,
       ldap: 'alice',
       name: 'Alice',
       email: 'alice@example.com',
