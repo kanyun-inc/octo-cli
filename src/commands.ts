@@ -2013,6 +2013,39 @@ export function registerCommands(program: Command): void {
       printOutput({ id: parsedId, deleted: true }, opts.output as OutputFormat);
     });
 
+  // ─── dashboards ─────────────────────────────────────────
+  const dashboards = program
+    .command('dashboards')
+    .description('Read and update dashboard configurations');
+
+  dashboards
+    .command('detail')
+    .description('Read the complete configuration of a dashboard')
+    .argument('<dashboardId>', 'Dashboard ID')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .action(async (dashboardId, opts) => {
+      const id = parsePositiveInteger(dashboardId, 'dashboardId');
+      const data = await getClient().dashboardDetail(id);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
+  dashboards
+    .command('update')
+    .description('Replace a dashboard configuration from its full JSON object')
+    .argument('<dashboardId>', 'Dashboard ID')
+    .requiredOption('--file <path>', 'Full dashboard JSON file, or - for stdin')
+    .option('-o, --output <fmt>', 'Output format', 'json')
+    .addHelpText(
+      'after',
+      '\nRead dashboards detail first, edit the full configuration, then submit it.\nThis is a complete PUT, not a partial update: omitted configuration fields may be cleared.\nRequires PAT ownership permission; read access alone does not grant update permission.\nKeep the original parent: this endpoint does not move folders. version is not checked.\nReturns id, title and parent; read detail again to verify the saved configuration.'
+    )
+    .action(async (dashboardId, opts) => {
+      const id = parsePositiveInteger(dashboardId, 'dashboardId');
+      const dashboard = readJsonObject<Record<string, unknown>>(opts.file);
+      const data = await getClient().dashboardUpdate(id, dashboard);
+      printOutput(data, opts.output as OutputFormat);
+    });
+
   // ─── users ───────────────────────────────────────────────
   program
     .command('users')

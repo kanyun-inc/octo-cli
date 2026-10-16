@@ -1160,6 +1160,46 @@ export function getMcpTools() {
       },
     },
     {
+      name: 'octo_dashboards_detail',
+      description:
+        'Read the complete configuration of a dashboard, including title, parent, time, variableList, widgetList, info, version and isSystem. Read this configuration before editing with octo_dashboards_update. Read access does not imply permission to update the dashboard.',
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dashboardId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Dashboard ID',
+          },
+        },
+        required: ['dashboardId'],
+      },
+    },
+    {
+      name: 'octo_dashboards_update',
+      description:
+        'Replace the complete configuration of a dashboard with a full PUT. Requires a PAT and existing backend ownership permission: the PAT user can update dashboards they created or copied through PAT access. First read octo_dashboards_detail, edit the desired fields, and submit the complete configuration while preserving all other fields. Omitted configuration fields may be cleared. The required parent field does not move the dashboard to another folder, and version is not used for optimistic locking. Returns id, title and parent; read detail again to verify the saved configuration.',
+      annotations: { readOnlyHint: false },
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          dashboardId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Dashboard ID',
+          },
+          dashboard: {
+            type: 'object',
+            minProperties: 1,
+            description:
+              'Complete dashboard configuration from octo_dashboards_detail with the intended changes, including title, parent, time, variableList, widgetList and info. Preserve nested widget and variable data, explicit null values and empty arrays; do not submit only changed fields.',
+          },
+        },
+        required: ['dashboardId', 'dashboard'],
+      },
+    },
+    {
       name: 'octo_cases_list',
       description:
         'List Octopus cases. Filter by group, status, priority, assignee, or case name input.',
@@ -2017,6 +2057,19 @@ export async function handleMcpTool(
         const data = await client.issueMergeChildren(
           String(args.issueId ?? ''),
           args.dataSource as string | undefined
+        );
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_dashboards_detail': {
+        const data = await client.dashboardDetail(args.dashboardId as number);
+        return ok(JSON.stringify(data, null, 2));
+      }
+
+      case 'octo_dashboards_update': {
+        const data = await client.dashboardUpdate(
+          args.dashboardId as number,
+          args.dashboard as Record<string, unknown>
         );
         return ok(JSON.stringify(data, null, 2));
       }
