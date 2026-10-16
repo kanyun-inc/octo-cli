@@ -285,6 +285,28 @@ octo-cli metrics point "sum(error_count{}.as_count)"                 # 单点查
 
 指标时序查询（`metrics query` / MCP `octo_metrics_query`）默认使用 UTC+8（北京时间）对齐日聚合边界，查询时间戳保持不变。
 
+### 大盘配置
+
+```bash
+# 读取完整配置，默认输出可直接保存的 JSON 对象
+octo-cli dashboards detail <dashboardId> > dashboard.json
+
+# 编辑 dashboard.json 后提交完整配置
+octo-cli dashboards update <dashboardId> --file dashboard.json
+
+# 也可以从标准输入读取
+cat dashboard.json | octo-cli dashboards update <dashboardId> --file -
+
+# 保存后再次读取核对
+octo-cli dashboards detail <dashboardId>
+```
+
+`detail` 返回保存的 `title/parent/time/variableList/widgetList/info` 配置及 `id/version/isSystem` 元信息，保留后端返回的嵌套结构、扩展字段、显式 `null` 和空数组。读取使用 `GET /infra-octopus-openapi/v1/dashboards/{id}`，需要目标站点先部署该新增 OpenAPI。
+
+`update` 的文件必须是单个非空 JSON 对象。先读取，在完整配置上修改目标字段，再提交；它沿用既有 PUT，不是 PATCH，遗漏字段可能清空原内容。CLI 和 MCP 不自动读取合并、补默认值或重试请求。两条命令都支持 `-o json/table/jsonl`，需要保存后再提交时使用默认 `json`。
+
+读写都使用当前配置的 PAT；读取按凭证租户和目录访问权限判断，读取成功不代表具备更新权限。已有更新接口只允许 PAT 所属用户修改其通过 PAT 创建或复制的大盘；`parent` 应沿用读取值，不能用于移动目录，`version` 不参与并发校验。更新返回 `id/title/parent`，完整保存结果需再次读取。读取和客户端转发保留扩展字段，但现有后端 PUT 仍按其配置 DTO 解析，不能保证契约之外的未知字段在保存后保留。
+
 ### 服务 / LLM / RUM / 事件 / 用户
 
 ```bash
@@ -338,6 +360,7 @@ octo-cli users alice bob                                  # 按姓名搜索用�
 | `llm` | LLM Span 查询 |
 | `rum list` / `rum detail` / `rum aggregate` | RUM 事件列表 / 详情 / 聚合 |
 | `events` / `events list` / `events aggregate` | 事件查询 / 聚合（`list` 为默认子命令） |
+| `dashboards detail` / `dashboards update` | 读取大盘完整配置 / 从 JSON 文件或 stdin 完整更新 |
 | `users` | 用户搜索 |
 | `mcp` / `mcp-install` | 启动 MCP Server / 一键注册到 Claude Code |
 
@@ -432,9 +455,13 @@ npx octo-cli mcp-install
 | `octo_llm_list` | LLM Span 查询 |
 | `octo_rum_list` / `octo_rum_detail` / `octo_rum_aggregate` | RUM 事件查询 / 详情 / 聚合 |
 | `octo_events_list` / `octo_events_aggregate` | 事件查询 / 聚合 |
+| `octo_dashboards_detail` | 按 dashboardId 读取完整大盘配置，只读 |
+| `octo_dashboards_update` | 按 dashboardId 和完整 dashboard 对象更新配置 |
 | `octo_users_search` | 用户搜索 |
 
 </details>
+
+大盘工具 `octo_dashboards_detail` 仅接收正整数 `dashboardId`；`octo_dashboards_update` 接收 `dashboardId` 与非空完整配置对象 `dashboard`。读取工具标记为只读，更新工具标记为写入；更新后使用读取工具核对结果。
 
 MCP 写工具沿用上述 CLI 的完整更新、数据源和权限语义。`octo_alerts_rules_update` 接收 `ruleId` 与完整 `rule` 对象；告警指派接收 `assigneeUserId` / `assigneeLdap`，Issue 分配接收 `userId` / `assigneeLdap`，ID 优先。聚合工具的 `dataSource` 必填，创建和更新的节点放在 `issuePipelineElement`，位置字段为 `parentElementId` / `previousElementId`。写入错误原样报告，不自动重试；成功后可通过详情或列表工具核对当前状态。
 
@@ -498,7 +525,7 @@ octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguany
 | LLM | `/v1/llm/span/list` |
 | RUM | `/v1/rum/list`、`/v1/rum/{id}`、`/v1/rum/aggregate` |
 | 事件 | `/v1/event/list`、`/v1/event/aggregate` |
-| 大盘 | `/v1/dashboards`（创建 / 更新） |
+| 大盘 | `/v1/dashboards/{id}`（读取 / 更新）；`/v1/dashboards`（底层客户端创建） |
 | 用户 | `/v1/users/search` |
 
 ## 贡献
