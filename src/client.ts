@@ -1210,7 +1210,21 @@ export class OctoClient {
     return this.post('/infra-octopus-openapi/v1/dashboards', data);
   }
 
-  async dashboardUpdate(id: number, data: unknown) {
+  async dashboardDetail(dashboardId: number) {
+    const id = parsePositiveInteger(dashboardId, 'dashboardId');
+    return this.get<Record<string, unknown>>(
+      `/infra-octopus-openapi/v1/dashboards/${id}`
+    );
+  }
+
+  async dashboardUpdate(dashboardId: number, data: unknown) {
+    const id = parsePositiveInteger(dashboardId, 'dashboardId');
+    if (!isRecord(data) || Object.keys(data).length === 0) {
+      throw new Error(
+        'dashboard must be a non-empty complete dashboard configuration'
+      );
+    }
+    // Forward the complete configuration, including nested nulls, without merging defaults.
     return this.put(`/infra-octopus-openapi/v1/dashboards/${id}`, data);
   }
 
