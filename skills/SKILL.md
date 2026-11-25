@@ -121,28 +121,74 @@ npx octo-cli issues search -q "service = <SERVICE>" --status unresolved -l 7d
 
 ## Octopus URL → octo-cli 命令
 
-When the user pastes an Octopus page URL, parse the hash parameters and convert to
-the equivalent octo-cli command. URL parameters are semantic and self-explanatory:
+When the user pastes an Octopus page URL, parse and decode the query parameters
+inside its hash (`#/path?...`) using the page-specific mappings below. Preserve
+the effective filters, time range, span/event type, and dashboard variables;
+parameter names and defaults do not necessarily match CLI options.
 
+```text
+https://octopus.zhenguanyu.com/#/rum-explorer?env=test&rumExplorerQuery=resource.type%3Dfetch&rumExplorerQueryEventType=resource&rumExplorerSelectedApplication=rush-app&time=1d
+→ npx octo-cli rum list -e test -q '(resource.type=fetch) AND type = resource AND application.name = rush-app' -l 1d
+
+https://octopus.zhenguanyu.com/#/logs/search?env=online&ql=service%3Dmyapp&time=15m
+→ npx octo-cli logs search -e online -q 'service=myapp' -l 15m
+
+https://octopus.zhenguanyu.com/#/trace-explorer?env=test&traceExplorerQuery=service%3Dmyapp&traceExplorerQuerySpanType=entrySpan&time=1h
+→ npx octo-cli trace search -e test -q '(service=myapp) AND entry = true' -l 1h
+
+https://octopus.zhenguanyu.com/#/dashboard/detail?id=3117&env=test&time=1d&var-cluster=cluster-a
+→ npx octo-cli dashboards detail 3117
+→ Read the target widget's complete query and resolve dashboard variables, including var-cluster.
+→ For a metric timeseries: npx octo-cli metrics query '<resolved complete metric QL>' -e test -l 1d
+
+https://octopus.zhenguanyu.com/#/alert/alerts?alert_status=alerting&time=30d
+→ npx octo-cli alerts search -s firing -l 30d
 ```
-https://octopus.zhenguanyu.com/#/rum-explorer?env=test&rumExplorerQuery=...&rumExplorerQueryEventType=resource&rumExplorerSelectedApplication=rush-app&time=1d
-→ npx octo-cli rum list -e test -q "<decoded rumExplorerQuery>" -l 1d
 
-https://octopus.zhenguanyu.com/#/log-explorer?env=online&query=service%3Dmyapp&time=15m
-→ npx octo-cli logs search -e online -q "service=myapp" -l 15m
+Page-specific rules:
 
-https://octopus.zhenguanyu.com/#/trace-explorer?env=test&query=...&time=1h
-→ npx octo-cli trace search -e test -q "<decoded query>" -l 1h
+- **RUM:** Combine decoded `rumExplorerQuery` with the event type from
+  `rumExplorerQueryEventType` and `application.name` for the selected concrete
+  application in `rumExplorerSelectedApplication`. Wrap a non-empty original
+  query in parentheses before adding `AND` filters to preserve `OR` precedence;
+  omit that part when the query is empty.
+- **Logs:** Read `ql` from `/logs/search`; do not assume `/log-explorer?query=...`
+  is a supported page URL.
+- **Trace:** Read `traceExplorerQuery` and `traceExplorerQuerySpanType`. The page
+  defaults to `entrySpan`, while the CLI's OpenAPI queries all spans: append
+  `entry = true` for `entrySpan`, and no span-type filter for `allSpan`. Preserve
+  parentheses around a non-empty original query. Verify the mapping for other
+  span types before claiming equivalence.
+- **Dashboard:** Read the saved configuration with `dashboards detail <id>`
+  (this command has no `-e` option). Resolve `var-*` using the dashboard's variable
+  definitions and defaults, including multi-select/all-value semantics. Preserve
+  complete queries, filters, aggregations, grouping, functions, and formula
+  dependencies rather than extracting only metric names. Choose the query
+  command by the widget's data source; dashboards can also contain logs, RUM,
+  Trace, and other data sources. Apply the URL environment and effective time
+  range to data queries, not to the configuration read.
+- **Alerts:** `/alert` redirects to `/alert/alerts`. The URL uses `alert_status`
+  with `alerting`, `closed`, or `all`, corresponding to CLI `-s firing`,
+  `-s resolved`, or `-s all`. The page defaults to `alerting` and `30d`, whereas
+  the CLI defaults to all statuses and `1h`; preserve the page's effective values
+  explicitly. The current alert page does not apply URL `env` to its list's
+  environment filter. Add CLI `-e online` only when that filter is established
+  by the user's request or actual page selection, not merely by `env=online`
+  in the URL.
 
-https://octopus.zhenguanyu.com/#/dashboard/detail?id=3117&env=test&time=1d&var-cluster=...
-→ Dashboard — extract metric names from dashboard config, query with octo-cli metrics
+Time and command construction:
 
-https://octopus.zhenguanyu.com/#/alert?env=online&status=firing
-→ npx octo-cli alerts search -e online -s firing
-```
-
-Key URL parameter mappings: `env` → `-e`, `time` → `-l`, `query`/`rumExplorerQuery` → `-q`,
-`rumExplorerQueryEventType` → determines rum type filter, `rumExplorerSelectedApplication` → application.name in query.
+- Map `env` to `-e` for logs, RUM, Trace, and dashboard data queries; use the
+  alert-specific rule above for alerts.
+- Map `time` to `-l` only for CLI-supported relative durations such as `15m`,
+  `1h`, and `1d` (units: `s/m/h/d/w`). Convert absolute ranges such as
+  `time=1718692000000-1718692010000` to
+  `--from 1718692000000 --to 1718692010000`. Resolve calendar ranges such as
+  `day` or `lastDay` to explicit timestamps using the page's timezone and range
+  semantics. When time is absent, use the page's effective default rather than
+  silently relying on the CLI default.
+- Shell-escape decoded query strings and filter values when constructing
+  commands; do not interpolate arbitrary URL content directly into double quotes.
 
 ## Query Syntax
 
