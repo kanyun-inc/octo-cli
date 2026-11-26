@@ -5,7 +5,7 @@ import path from 'node:path';
 const CONFIG_DIR = path.join(os.homedir(), '.octo-cli');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
-const DEFAULT_BASE_URL = 'https://octopus-app.zhenguanyu.com';
+const DEFAULT_BASE_URL = 'https://octopus.zhenguanyu.com';
 
 interface Config {
   token?: string;
