@@ -508,7 +508,7 @@ export OCTOPUS_EXTRA_HEADERS='{"X-Octopus-Tenant":"tenant-a"}'
 
 ## API 参考
 
-octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus-app.zhenguanyu.com`：
+octo-cli 封装了 Octopus OpenAPI，默认地址 `https://octopus.zhenguanyu.com`：
 
 | 领域 | 接口 |
 |------|------|
